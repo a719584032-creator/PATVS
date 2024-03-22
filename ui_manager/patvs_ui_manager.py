@@ -298,13 +298,13 @@ class TestCasesPanel(wx.Panel):
         wx.CallAfter(self.case_disable)
         self.sql.update_start_time_by_case_id(self.CaseID, action, num_test)
         # 使用多线程异步运行，防止GUI界面卡死
-        if action == 'S3':
+        if action == '时间':
             self.add_log_message(f"您选择的动作是: {action}，目标测试次数: {num_test}")
             thread = threading.Thread(target=self.patvs_monitor.monitor_time, args=(int(num_test),))
             thread.start()
-        elif action == 'S4':
+        elif action == 'power plug/unplug':
             self.add_log_message(f"您选择的动作是: {action}，目标测试次数: {num_test}")
-            thread = threading.Thread(target=self.patvs_monitor.monitor_power_plug_changes, args=(int(num_test),))
+            thread = threading.Thread(target=self.patvs_monitor.start_monitoring_power, args=(int(num_test),))
             thread.start()
 
     def after_test(self):
