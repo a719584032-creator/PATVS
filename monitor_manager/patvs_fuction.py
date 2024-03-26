@@ -4,7 +4,7 @@ import wx
 from common.logs import logger
 import time
 import psutil
-import win32evtlog  # Needs to be installed separately
+import win32evtlog
 import win32evtlogutil
 import win32con
 import pytz
@@ -77,7 +77,6 @@ class Patvs_Fuction():
                 start_time = datetime.datetime.strptime(start_time, "%Y-%m-%d %H:%M:%S")
             except ValueError:
                 start_time = datetime.datetime.strptime(start_time, "%Y/%m/%d %H:%M:%S")
-            print(start_time)
         try:
             # Read the events
             events = win32evtlog.ReadEventLog(hand, flags, 0)
@@ -89,7 +88,6 @@ class Patvs_Fuction():
                             occurred_time = datetime.datetime.strptime(occurred_time_str, "%Y/%m/%d %H:%M:%S")
                         except ValueError:
                             occurred_time = datetime.datetime.strptime(occurred_time_str, "%Y-%m-%d %H:%M:%S")
-                        print(occurred_time)
                         if not start_time or occurred_time > start_time:
                             total += 1
                 events = win32evtlog.ReadEventLog(hand, flags, 0)
@@ -100,9 +98,8 @@ class Patvs_Fuction():
     def start_monitoring_s3_and_power(self, target_cycles):
         # 设定开始时间为当前时间
         start_time = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        print(f"Monitoring started at {start_time}")
+        logger.info(f"Monitoring started at {start_time}")
 
-        # 用于记录电源插拔次数和S3睡眠事件次数的计数器
         plug_unplug_cycles = 0
         s3_sleep_events = 0
 
@@ -116,11 +113,7 @@ class Patvs_Fuction():
             # 两个都达到目标次数后退出循环
             if plug_unplug_cycles >= target_cycles and s3_sleep_events >= target_cycles:
                 break
-
-            # 睡眠一秒钟后继续监控
             time.sleep(1)
-
-        # 完成监控后的消息
         message = (
             f"Reached target cycles. Plug/unplug cycles: {plug_unplug_cycles}, S3 sleep events: {s3_sleep_events}")
         wx.CallAfter(self.window.add_log_message, message)

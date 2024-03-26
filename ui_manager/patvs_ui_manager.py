@@ -98,7 +98,7 @@ class TestCasesPanel(wx.Panel):
         imageCtrl = wx.StaticBitmap(self, bitmap=lenovo_bitmap)
 
         # 下拉框 监控动作、测试次数
-        self.monitor_actions = ['时间', 'power plug/unplug', 'S3', 'S4', 'input', 'mouse', 'Restart']
+        self.monitor_actions = ['时间', 'power plug/unplug', 'S3+power-plug/unplug', 'S3', 'S4', 'input', 'mouse', 'Restart']
         self.tests_num = ['1', '3', '5', '10', '20', '50', '100']
         self.actions_box = wx.ComboBox(self, choices=self.monitor_actions)
         self.tests_box = wx.ComboBox(self, choices=self.tests_num)
@@ -302,9 +302,13 @@ class TestCasesPanel(wx.Panel):
             self.add_log_message(f"您选择的动作是: {action}，目标测试次数: {num_test}")
             thread = threading.Thread(target=self.patvs_monitor.monitor_time, args=(int(num_test),))
             thread.start()
-        elif action == 'power plug/unplug':
+        elif action == 'power-plug/unplug':
             self.add_log_message(f"您选择的动作是: {action}，目标测试次数: {num_test}")
             thread = threading.Thread(target=self.patvs_monitor.start_monitoring_power, args=(int(num_test),))
+            thread.start()
+        elif action == 'S3+power-plug/unplug':
+            self.add_log_message(f"您选择的动作是: {action}，目标测试次数: {num_test}")
+            thread = threading.Thread(target=self.patvs_monitor.start_monitoring_s3_and_power, args=(int(num_test),))
             thread.start()
 
     def after_test(self):
