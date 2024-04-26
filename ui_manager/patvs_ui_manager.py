@@ -2,6 +2,9 @@
 # 负责GUI界面展示以及交互逻辑
 import os
 import json
+
+import pywintypes
+import win32process
 import wx
 import wx.grid
 import subprocess
@@ -13,10 +16,21 @@ from monitor_manager.patvs_fuction import Patvs_Fuction
 from openpyxl.styles import PatternFill
 from openpyxl.styles import Font
 from sql_manager.patvs_sql import Patvs_SQL
-
+from monitor_manager.devicerm import Notification
 from common.rw_excel import MyExcel
 from datetime import datetime
+import datetime
 from common.logs import logger
+import global_state
+import win32con
+import win32api
+import win32gui
+
+
+def resource_path(relative_path):
+    """ Get absolute path to resource, works for dev and for PyInstaller """
+    base_path = getattr(sys, '_MEIPASS', os.path.dirname(os.path.abspath(__file__)))
+    return os.path.join(base_path, relative_path)
 
 
 class ResetButtonRenderer(wx.grid.GridCellRenderer):
@@ -38,7 +52,9 @@ class TestCasesPanel(wx.Panel):
     def __init__(self, parent):
         super().__init__(parent)
         self.sql = Patvs_SQL()  # 连接到数据库
-        self.patvs_monitor = Patvs_Fuction(self)
+        # 在主线程中创建一个事件,用来通知阻塞情况下终止线程
+        self.stop_event = True
+        self.patvs_monitor = Patvs_Fuction(self, self.stop_event)
 
         self.splitter = wx.SplitterWindow(self)
         # 创建另一个 splitter 来分割 self.content 和新的日志区域
@@ -58,47 +74,53 @@ class TestCasesPanel(wx.Panel):
         self.splitter.SetSashGravity(0.4)
 
         # 上传按钮
-        upload_icon = wx.Bitmap("icon/上传文件夹.png")
+        upload_icon = wx.Bitmap(resource_path("icon\\上传文件夹.png"))
         self.upload_button = wx.BitmapButton(self, bitmap=upload_icon)
         self.upload_button.SetToolTip(wx.ToolTip("上传文件"))
         self.upload_button.Bind(wx.EVT_BUTTON, self.up_file)
 
         # 检查按钮
-        device_icon = wx.Bitmap("icon/设备管理.png")
+        device_icon = wx.Bitmap(resource_path("icon\\设备管理.png"))
         # self.check_button = wx.Button(self, label='检查')
         self.device_button = wx.BitmapButton(self, bitmap=device_icon)
         self.device_button.SetToolTip(wx.ToolTip("打开设备管理器"))
         self.device_button.Bind(wx.EVT_BUTTON, self.open_device_manager)
 
         # 配置按钮
-        config_icon = wx.Bitmap("icon/configure.png")
+        config_icon = wx.Bitmap(resource_path("icon\\configure.png"))
         self.config_button = wx.BitmapButton(self, bitmap=config_icon)
         self.config_button.SetToolTip(wx.ToolTip("生成配置文件"))
         self.config_button.Bind(wx.EVT_BUTTON, self.write_config)
 
         # 查看用例状态按钮
-        status_icon = wx.Bitmap("icon/查看状态1.png")
+        status_icon = wx.Bitmap(resource_path("icon\\查看状态1.png"))
         self.status_button = wx.BitmapButton(self, bitmap=status_icon)
         self.status_button.SetToolTip(wx.ToolTip("查看用例状态"))
         self.status_button.Bind(wx.EVT_BUTTON, self.check_status)
 
         # 附件按钮
-        annex_icon = wx.Bitmap("icon/附件.png")
+        annex_icon = wx.Bitmap(resource_path("icon\\附件.png"))
         self.annex_button = wx.BitmapButton(self, bitmap=annex_icon)
         self.annex_button.SetToolTip(wx.ToolTip("上传附件"))
         self.annex_button.Bind(wx.EVT_BUTTON, self.select_annex)
 
         # 用例筛选下拉框
-        all_filenames = self.sql.select_all_filename()
-        self.case_search_combo = wx.ComboBox(self, choices=all_filenames)
+        # 第一个下拉框，选择tester
+        all_testers = self.sql.select_all_tester()
+        self.tester_combo = wx.ComboBox(self, choices=all_testers, style=wx.CB_READONLY)
+        self.tester_combo.Bind(wx.EVT_COMBOBOX, self.on_tester_select)
+
+        # 第二个下拉框，初始时为空，后续根据选择的tester填充
+        self.case_search_combo = wx.ComboBox(self, choices=[], style=wx.CB_READONLY)
         self.case_search_combo.Bind(wx.EVT_COMBOBOX, self.on_case_select)
 
         # 图片
-        lenovo_bitmap = wx.Bitmap('icon/3332.png', wx.BITMAP_TYPE_ANY)
+        lenovo_bitmap = wx.Bitmap(resource_path("icon\\3332.png"), wx.BITMAP_TYPE_ANY)
         imageCtrl = wx.StaticBitmap(self, bitmap=lenovo_bitmap)
 
         # 下拉框 监控动作、测试次数
-        self.monitor_actions = ['时间', 'power plug/unplug', 'S3+power-plug/unplug', 'S3', 'S4', 'input', 'mouse', 'Restart']
+        self.monitor_actions = ['时间', 'power-plug/unplug', 'S3+power-plug/unplug', 'S4', 'S5', 'device-plug/unplug',
+                                'S3+device-plug/unplug', 'mouse', 'Restart']
         self.tests_num = ['1', '3', '5', '10', '20', '50', '100']
         self.actions_box = wx.ComboBox(self, choices=self.monitor_actions)
         self.tests_box = wx.ComboBox(self, choices=self.tests_num)
@@ -148,9 +170,12 @@ class TestCasesPanel(wx.Panel):
 
         # 单独创建一个水平盒子来放置 case_search_combo 下拉框
         caseSearchSizer = wx.BoxSizer(wx.HORIZONTAL)
-
+        self.testerLabel = wx.StaticText(self, label="测试人员")
+        #    self.testerLabel.SetFont(font)
+        caseSearchSizer.Add(self.testerLabel, 0, wx.ALL, 5)
+        caseSearchSizer.Add(self.tester_combo, 0, wx.ALL, 5)
         self.caseLabel = wx.StaticText(self, label="测试用例")
-        self.caseLabel.SetFont(font)
+        #     self.caseLabel.SetFont(font)
         caseSearchSizer.Add(self.caseLabel, 0, wx.ALL, 5)
         caseSearchSizer.Add(self.case_search_combo, 0, wx.ALL, 5)
         # 添加透明占位符,保持对齐
@@ -158,11 +183,12 @@ class TestCasesPanel(wx.Panel):
         dummyLabel.SetMinSize((60, -1))
         caseSearchSizer.Add(dummyLabel, 0, wx.EXPAND)
 
-        caseSearchSizer.AddStretchSpacer(prop=1)
+        #  caseSearchSizer.AddStretchSpacer(prop=1)
+        caseSearchSizer.AddSpacer(110)
         self.test_progress = wx.StaticText(self, label=f"测试进度:{self.calculate_result['execution_progress']}")
         self.test_progress.SetFont(font)  # 设置字体大小
         caseSearchSizer.Add(self.test_progress, 0, wx.ALIGN_CENTER | wx.ALL, 5)
-        caseSearchSizer.AddSpacer(60)
+        caseSearchSizer.AddSpacer(85)
         self.passing_rate = wx.StaticText(self, label=f"通过率:{self.calculate_result['pass_rate']}")
         self.passing_rate.SetFont(font)  # 设置字体大小
         caseSearchSizer.Add(self.passing_rate, 0, wx.ALIGN_CENTER | wx.ALL, 5)
@@ -204,13 +230,20 @@ class TestCasesPanel(wx.Panel):
 
         # 设置主布局
         self.SetSizer(mainSizer)
-
         self.testCases = self.PopulateTree(self.filename)
         # 用户点击标题赋值
         self.CaseID = None
         self.tree.Bind(wx.EVT_TREE_SEL_CHANGED, self.OnSelChanged)
         # 如果有记录，显示上一次打开的页面
         self.restore_state()
+
+    def on_tester_select(self, event):
+        # 当选择了特定的tester时，获取对应的文件名并更新第二个下拉框
+        tester = self.tester_combo.GetValue()
+        all_filenames = self.sql.select_all_filename_by_tester(tester)
+        self.tree.DeleteAllItems()  # 清空现有的树状结构
+        self.case_search_combo.Clear()  # 先清除之前的选项
+        self.case_search_combo.AppendItems(all_filenames)  # 添加新的选项
 
     def on_case_select(self, event):
         # 处理下拉框选择事件
@@ -260,6 +293,13 @@ class TestCasesPanel(wx.Panel):
             self.log_content.AppendText(message + '\n')  # 在文本控件的末尾添加文本
 
     def test_result(self, event):
+        # 设置事件以通知监控线程停止
+        self.patvs_monitor.stop_event = False
+        # 当用例为 block 时，需要主动去停止 messageLoop 的循环
+        try:
+            win32api.PostThreadMessage(self.msg_loop_thread_id, win32con.WM_QUIT, 0, 0)
+        except pywintypes.error:
+            pass
         clicked_button = event.GetEventObject()
         case_result = clicked_button.GetLabel()
         if clicked_button is self.result_buttons['Pass']:
@@ -297,19 +337,55 @@ class TestCasesPanel(wx.Panel):
             return
         wx.CallAfter(self.case_disable)
         self.sql.update_start_time_by_case_id(self.CaseID, action, num_test)
+        # 初始化终止信号
+        self.patvs_monitor.stop_event = True
+        global_state.set_stop_event(False)
         # 使用多线程异步运行，防止GUI界面卡死
         if action == '时间':
             self.add_log_message(f"您选择的动作是: {action}，目标测试次数: {num_test}")
             thread = threading.Thread(target=self.patvs_monitor.monitor_time, args=(int(num_test),))
+            thread.setDaemon(True)
             thread.start()
         elif action == 'power-plug/unplug':
             self.add_log_message(f"您选择的动作是: {action}，目标测试次数: {num_test}")
             thread = threading.Thread(target=self.patvs_monitor.start_monitoring_power, args=(int(num_test),))
+            thread.setDaemon(True)
             thread.start()
         elif action == 'S3+power-plug/unplug':
             self.add_log_message(f"您选择的动作是: {action}，目标测试次数: {num_test}")
             thread = threading.Thread(target=self.patvs_monitor.start_monitoring_s3_and_power, args=(int(num_test),))
+            thread.setDaemon(True)
             thread.start()
+        elif action == 'S4':
+            self.add_log_message(f"您选择的动作是: {action}，目标测试次数: {num_test}")
+            start_time = self.sql.select_start_time(self.CaseID)
+            thread = threading.Thread(target=self.patvs_monitor.test_count_s4_sleep_events,
+                                      args=(str(start_time), int(num_test),))
+            thread.setDaemon(True)
+            thread.start()
+        elif action == 'S5':
+            self.add_log_message(f"您选择的动作是: {action}，目标测试次数: {num_test}")
+            start_time = self.sql.select_start_time(self.CaseID)
+            thread = threading.Thread(target=self.patvs_monitor.test_count_s5_sleep_events,
+                                      args=(str(start_time), int(num_test),))
+            thread.setDaemon(True)
+            thread.start()
+        elif action == 'device-plug/unplug':
+            self.add_log_message(f"您选择的动作是: {action}，目标测试次数: {num_test}")
+            msg_loop_thread = threading.Thread(target=self.patvs_monitor.monitor_device_plug_changes,
+                                               args=(int(num_test),))
+            msg_loop_thread.setDaemon(True)
+            msg_loop_thread.start()
+            # 获取线程ID
+            self.msg_loop_thread_id = msg_loop_thread.ident
+        elif action == 'S3+device-plug/unplug':
+            self.add_log_message(f"您选择的动作是: {action}，目标测试次数: {num_test}")
+            msg_loop_thread = threading.Thread(target=self.patvs_monitor.s3_and_device_plug_changes,
+                                               args=(int(num_test),))
+            msg_loop_thread.setDaemon(True)
+            msg_loop_thread.start()
+            # 获取线程ID
+            self.msg_loop_thread_id = msg_loop_thread.ident
 
     def after_test(self):
         for button in self.result_buttons:
@@ -328,7 +404,8 @@ class TestCasesPanel(wx.Panel):
         self.start_button.Hide()
         for button in self.result_buttons:
             self.result_buttons[button].Show()
-            self.result_buttons[button].Disable()
+        self.result_buttons['Pass'].Disable()
+        self.result_buttons['Fail'].Disable()
         self.Layout()
 
     def case_enable(self):
@@ -380,11 +457,18 @@ class TestCasesPanel(wx.Panel):
             data = MyExcel(pathname)
             # 校验格式
             try:
-                data.active_sheet('Sheet1')
+                tester = data.get_sheet_names()[0]
+                data.active_sheet(tester)
                 col_data = data.getRowValues(1)
-                case_data = data.get_appoint_row_values(2)
-                logger.info(f'excel case data is {case_data}')
                 data.validate_case_data(col_data)
+                case_data = data.get_appoint_row_values(2)
+                for i, case in enumerate(case_data):
+                    has_empty_values = any(element in (None, '') for element in case[1:])
+                    if has_empty_values:
+                        raise ValueError(f"第{i + 2}行用例标题、步骤、预期结果不能为空")
+
+                logger.info(f'excel case data is {case_data}')
+
             except Exception as e:
                 # 格式校验出错
                 wx.MessageBox(f"上传的用例格式不符合规则，请按照模板导入用例。错误详情: {e}", "提示",
@@ -393,7 +477,9 @@ class TestCasesPanel(wx.Panel):
             if self.sql.select_filename_by_name(self.filename):
                 wx.MessageBox(f"文件 '{self.filename}' 已经存在于数据库中。", "提示", wx.OK | wx.ICON_INFORMATION)
             else:
-                self.sql.insert_case_by_filename(self.filename, case_data)
+                self.sql.insert_case_by_filename(self.filename, tester, case_data)
+            # 更新显示
+            self.case_search_combo.SetValue(self.filename)
             self.testCases = self.PopulateTree(self.filename)
             # 使用 partial可以提前填充一个参数，得到一个只需要一个参数的新函数
             self.tree.Bind(wx.EVT_TREE_SEL_CHANGED, self.OnSelChanged)
@@ -613,8 +699,9 @@ class TestCasesPanel(wx.Panel):
         all_case = self.sql.select_case_by_filename(filename)
         self.update_label(filename)
         # 定义用于表示状态的图标
-        icons = {"Pass": "icon/Pass.png", "Fail": "icon/Fail.png", "Block": "icon/Block.png",
-                 "None": None, "Root": "icon/rootIcon.png"}
+        icons = {"Pass": resource_path("icon\\Pass.png"), "Fail": resource_path("icon\\Fail.png"),
+                 "Block": resource_path("icon\\Block.png"),
+                 "None": None, "Root": resource_path("icon\\rootIcon.png")}
         image_list = wx.ImageList(16, 16)
         self.icon_indices = {}
         # 创建一个透明位图
@@ -639,15 +726,18 @@ class TestCasesPanel(wx.Panel):
         for row in all_case:
             caseStatus = row[0]
             caseID = row[13]
+            # 按照 机型→标题 展示title
+            caseModel = (row[3] + '→') if row[3] else ''
             caseTitle = row[4]
             caseSteps = row[6]
             expectedResult = row[7]
+
             # 根据状态添加相应的图标
             if caseStatus in self.icon_indices:
-                caseNode = self.tree.AppendItem(root, caseTitle)
+                caseNode = self.tree.AppendItem(root, caseModel + caseTitle)
                 self.tree.SetItemImage(caseNode, self.icon_indices[caseStatus])  # 设置节点图像
             else:
-                caseNode = self.tree.AppendItem(root, caseTitle)
+                caseNode = self.tree.AppendItem(root, caseModel + caseTitle)
             self.tree.SetItemData(caseNode, caseID)
             self.tree.AppendItem(caseNode, f"操作步骤: {caseSteps}")
             self.tree.SetItemData(caseNode, caseID)
@@ -679,10 +769,12 @@ class TestCasesPanel(wx.Panel):
         self.CaseID = self.tree.GetItemData(item)
         logger.info(f"You selected the case with ID: {self.CaseID}")
         for case in self.testCases:
-            if case[4] == caseTitle:
+            caseModel = (case[3] + '→') if case[3] else ''
+            if caseModel + case[4] == caseTitle:
                 self.content.Clear()
                 self.log_content.Clear()
-                self.content.SetValue(f"用例标题:\n{case[4]}\n\n")
+                self.content.SetValue(f"测试机型: {case[3]}\n\n")
+                self.content.AppendText(f"用例标题:\n{case[4]}\n\n")
                 self.content.AppendText(f"前置条件:\n{case[5]}\n\n")
                 self.content.AppendText(f"操作步骤:\n{case[6]}\n\n")
                 self.content.SetInsertionPointEnd()  # 移动光标到末尾以便于添加蓝色文本

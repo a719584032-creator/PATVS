@@ -137,7 +137,7 @@ class MyExcel:
 
     def validate_case_data(self, col_data):
         # 格式检验
-        expected_cols = ['测试机型', '用例标题', '用例步骤', '预期结果', '执行结果']
+        expected_cols = ['测试机型', '用例标题', '用例步骤', '预期结果']
         logger.info(col_data)
         if col_data != expected_cols:
             raise ValueError("列标题的格式错误！")

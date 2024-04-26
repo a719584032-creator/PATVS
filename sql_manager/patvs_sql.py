@@ -10,7 +10,7 @@ import sys
 
 class Patvs_SQL():
     def __init__(self):
-        self.conn = sqlite3.connect(Public.get_root_path())
+        self.conn = sqlite3.connect(r"D:\PATVS\sqlite-tools\lenovoDb")
 
     def update_start_time_by_case_id(self, case_id, actions, actions_num):
         cur = self.conn.cursor()
@@ -57,17 +57,17 @@ class Patvs_SQL():
         finally:
             cur.close()
 
-    def insert_case_by_filename(self, file_name, case_data):
+    def insert_case_by_filename(self, file_name, tester, case_data):
         cur = self.conn.cursor()
         try:
             logger.info(f"start inserting {file_name} into DB ")
-            cur.execute("INSERT INTO TestFile (FileName) VALUES (?)", (file_name,))
+            cur.execute("INSERT INTO TestFile (FileName, Tester) VALUES (?, ?)", (file_name, tester))
             # 获取刚刚插入的 TestFile 记录的 FileID
             file_id = cur.lastrowid
             for case in case_data:
                 cur.execute(
-                    "INSERT INTO TestCase (ModelName, CaseTitle, CaseSteps, ExpectedResult, TestResult, FileID) VALUES (?, ?, ?, ?, ?, ?)",
-                    (case[0], case[1], case[2], case[3], case[4], file_id))
+                    "INSERT INTO TestCase (ModelName, CaseTitle, CaseSteps, ExpectedResult, FileID) VALUES (?, ?, ?, ?, ?)",
+                    (case[0], case[1], case[2], case[3], file_id))
         except Exception as e:
             logger.error(f"An error occurred: {e}")
             self.conn.rollback()
@@ -98,14 +98,25 @@ class Patvs_SQL():
         else:
             return False
 
-    def select_all_filename(self):
+    def select_all_filename_by_tester(self, tester):
         cur = self.conn.cursor()
-        cur.execute("SELECT FileName FROM TestFile")
+        cur.execute("SELECT FileName FROM TestFile WHERE Tester=?", (tester,))
         result = cur.fetchall()
         cur.close()
         logger.info(result)
         if result:
             return [res[0] for res in result]
+        else:
+            return None
+
+    def select_all_tester(self):
+        cur = self.conn.cursor()
+        cur.execute("SELECT Tester FROM TestFile")
+        result = cur.fetchall()
+        cur.close()
+        logger.info(result)
+        if result:
+            return list({res[0] for res in result})
         else:
             return None
 
@@ -284,8 +295,30 @@ class Patvs_SQL():
             "pass_rate": pass_rate
         }
 
+    def select_start_time(self, case_id):
+        cur = self.conn.cursor()
+        try:
+            cur.execute("SELECT StartTime FROM TestCase WHERE CaseID = ?", (case_id,))
+            result = cur.fetchone()
+            logger.info(result)
+            if result[0] is None:
+                # 查询结果为空，获取当前时间
+                current_time = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+                cur.execute("UPDATE TestCase SET StartTime = ? WHERE CaseID = ?", (current_time, case_id))
+                self.conn.commit()
+                # 返回当前时间
+                return current_time
+            else:
+                # 查询结果不为空，返回查询得到的时间
+                return result[0]
+        except Exception as e:
+            logger.error(f"Error selecting or updating start time for CaseID {case_id}: {e}")
+            self.conn.rollback()
+        finally:
+            cur.close()
+
 
 if __name__ == '__main__':
     data = Patvs_SQL()
-    file = data.count_case_by_filename('Demo测试用例')
+    file = data.select_start_time(22)
     print(file)

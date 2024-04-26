@@ -7,6 +7,7 @@ import time
 import os
 import sys
 
+
 class Public(object):
 
     @staticmethod
@@ -89,6 +90,12 @@ class Public(object):
         # 规范化路径，消除..等相对元素，获取绝对路径
         root_path = os.path.abspath(db_path)
         return root_path
+
+    @staticmethod
+    def resource_path(relative_path):
+        """ Get absolute path to resource, works for dev and for PyInstaller """
+        base_path = getattr(sys, '_MEIPASS', os.path.dirname(os.path.abspath(__file__)))
+        return os.path.join(base_path, relative_path)
 
     @staticmethod
     def get_num(num_string):

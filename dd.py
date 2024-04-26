@@ -1,42 +1,28 @@
-import psutil
-import time
+class SharedData:
+    def __init__(self, initial_value=None):
+        self.value = initial_value
 
+# 分别在两个不同的类中使用这个共享数据
+class ClassA:
+    def __init__(self, shared_data):
+        self.shared_data = shared_data
 
-# percent = battery.percent  # 电量百分比
-# plugged = battery.power_plugged  # 是否连接电源
-# time_left = battery.secsleft  # 剩余时间（秒），未充电时可用
+    def update_value(self, new_value):
+        self.shared_data.value = new_value
 
-def monitor_power_plug_changes(target_cycles, interval=1):
-    plugged_in_last_state = None
-    plug_unplug_cycles = 0
+class ClassB:
+    def __init__(self, shared_data):
+        self.shared_data = shared_data
 
-    while plug_unplug_cycles < target_cycles:
-        battery = psutil.sensors_battery()
+    def print_value(self):
+        print(self.shared_data.value)
 
-        if battery:
-            plugged_in = battery.power_plugged
-            # 初次运行时设定初始电源状态
-            if plugged_in_last_state is None:
-                plugged_in_last_state = plugged_in
+# 创建一个共享数据对象
+shared_data = SharedData(initial_value=0)
 
-            # 当电源状态改变时
-            if plugged_in != plugged_in_last_state:
-                plugged_in_last_state = plugged_in
+# 在两个类的实例间共享同一个数据
+a = ClassA(shared_data)
+b = ClassB(shared_data)
 
-                # 当检测到拔出动作后计算一次周期
-                if not plugged_in:
-                    plug_unplug_cycles += 1
-                    print(f"Power plug/unplug cycle completed: {plug_unplug_cycles} times")
-                if plug_unplug_cycles == target_cycles:
-                    break
-        else:
-            print("No battery information found")
-            break
-        time.sleep(interval)
-
-    print(f"Target power plug/unplug cycles {target_cycles} reached. Exiting.")
-
-
-# 调用函数，设置目标周期次数
-num = 3  # 设置监测的目标周期次数
-monitor_power_plug_changes(num)
+a.update_value(5)  # ClassA的实例更改了共享数据的值
+b.print_value()    # ClassB的实例能够看到更新后的数据，输出 5
