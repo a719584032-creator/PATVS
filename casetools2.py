@@ -56,7 +56,10 @@ def get_all_test(file_name, sheet_name):
             print("-" * 40)  # 打印分隔线，表示步骤和预期结果的结束
             # 过滤掉都为 None 的数据，添加后重置字典
             if any(case.values()):
-                filled_case = {k: v if v is not None else 'NA' for k, v in case.items()}
+                filled_case = {k: v if v is not None and v != '' else 'NA' for k, v in case.items()}
+                print('************************************************')
+                print(filled_case['expected'])
+                print('************************************************')
                 all_case.append(filled_case)
                 case = {
                     'title': None,

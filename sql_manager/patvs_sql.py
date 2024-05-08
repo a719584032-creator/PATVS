@@ -6,6 +6,7 @@ from common.logs import logger
 from common.tools import Public
 import os
 import sys
+import math
 
 
 class Patvs_SQL():
@@ -15,9 +16,10 @@ class Patvs_SQL():
     def update_start_time_by_case_id(self, case_id, actions, actions_num):
         cur = self.conn.cursor()
         try:
-            cur.execute("SELECT StartTime FROM TestCase WHERE caseID = ?", (case_id,))
-            result = cur.fetchone()
-            if result and result[0] is not None:  # 确保result的查询结果不是None并且 StartTime（result[0]）也位置None
+            cur.execute("SELECT StartTime,TestResult FROM TestCase WHERE caseID = ?", (case_id,))
+            result = cur.fetchall()
+            logger.info(result)
+            if result and result[0][0] is not None and result[0][1] is None:  # 确保result的查询结果不是None并且 StartTime（result[0]）也位置None
                 logger.info(f"已有执行记录时间 {result},仅修改监控动作和次数")
                 cur.execute("UPDATE TestCase SET Actions = ?, ActionsNum = ? WHERE CaseID = ?",
                             (actions, actions_num, case_id))
@@ -218,6 +220,35 @@ class Patvs_SQL():
         finally:
             cur.close()
 
+    def count_case_time_by_filename(self, filename):
+        """
+        统计总用例耗时
+        :param filename: 测试文件的名称
+        :return: 返回该测试文件中的总用例耗时
+        """
+        cur = self.conn.cursor()
+        try:
+            cur.execute("SELECT FileID FROM TestFile WHERE FileName=?", (filename,))
+            file_id_result = cur.fetchone()
+            if file_id_result:
+                file_id = file_id_result[0]
+                cur.execute("SELECT SUM(TestTime) FROM TestCase WHERE FileID=?", (file_id,))
+                count_result = cur.fetchone()
+                if count_result and count_result[0] is not None:
+                    # 使用math.ceil函数将秒转换为分钟，并向上取整
+                    total_time_in_min = math.ceil(count_result[0] / 60.0)
+                    return str(total_time_in_min) + ' min'
+                else:
+                    return 0
+            else:
+                logger.error(f"No entries found for filename: {filename}")
+                return 0
+        except sqlite3.Error as e:
+            logger.error(f"An error occurred: {e.args[0]}")
+            return 0
+        finally:
+            cur.close()
+
     def count_executed_case_by_filename(self, filename):
         """
         统计已执行用例数
@@ -272,6 +303,8 @@ class Patvs_SQL():
         计算测试用例的执行进度和通过率
         :return: 返回包含执行进度和通过率的字典
         """
+        # 项目耗时
+        case_time_count = self.count_case_time_by_filename(filename)
         # 总用例数
         case_count = self.count_case_by_filename(filename)
         # 已执行用例数
@@ -292,7 +325,8 @@ class Patvs_SQL():
             "case_count": case_count,
             "executed_cases_count": executed_cases_count,
             "execution_progress": execution_progress,
-            "pass_rate": pass_rate
+            "pass_rate": pass_rate,
+            "case_time_count": case_time_count
         }
 
     def select_start_time(self, case_id):

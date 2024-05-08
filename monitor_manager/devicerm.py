@@ -11,7 +11,7 @@ import pywintypes
 import winerror
 import time
 from common.logs import logger
-import global_state
+
 
 GUID_DEVINTERFACE_USB_DEVICE = "{A5DCBF10-6530-11D2-901F-00C04FB951ED}"
 

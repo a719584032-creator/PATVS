@@ -21,7 +21,6 @@ from common.rw_excel import MyExcel
 from datetime import datetime
 import datetime
 from common.logs import logger
-import global_state
 import win32con
 import win32api
 import win32gui
@@ -148,6 +147,12 @@ class TestCasesPanel(wx.Panel):
         self.filename = 'Demo测试用例'
         self.calculate_result = self.sql.calculate_progress_and_pass_rate(self.filename)
         # 添加居中的标签
+        self.case_time_total = wx.StaticText(self, label=f"总耗时:{self.calculate_result['case_time_count']}")
+        self.case_time_total.SetFont(font)
+        buttonSizer.Add(self.case_time_total, 0, wx.ALIGN_CENTER | wx.ALL, 5)
+
+        # 添加间隙,以像素为单位的间隔宽度
+        buttonSizer.AddSpacer(30)
         self.case_total = wx.StaticText(self, label=f"用例总数:{self.calculate_result['case_count']}")
         self.case_total.SetFont(font)
         buttonSizer.Add(self.case_total, 0, wx.ALIGN_CENTER | wx.ALL, 5)
@@ -261,7 +266,8 @@ class TestCasesPanel(wx.Panel):
     def save_state(self):
         # 获取当前选中的 filename，并将其加入状态字典
         state = {
-            'filename': self.filename if hasattr(self, 'filename') else None
+            'filename': self.filename if hasattr(self, 'filename') else None,
+            'tester': self.tester_combo.GetValue()
         }
         logger.info('Saving state.')
         # 写入状态到文件
@@ -276,13 +282,19 @@ class TestCasesPanel(wx.Panel):
                 # 恢复 filename
                 if 'filename' in state and state['filename'] is not None:
                     self.filename = state['filename']
-                    self.set_filename_combo()
+                    tester = state['tester']
+                    self.set_filename_combo(tester)
         except FileNotFoundError:
             logger.info('State file not found, starting with default state.')
             self.Center()
 
-    def set_filename_combo(self):
+    def set_filename_combo(self, tester):
         # 更新下拉框显示
+        self.tester_combo.SetValue(tester)
+        all_filenames = self.sql.select_all_filename_by_tester(tester)
+        self.tree.DeleteAllItems()  # 清空现有的树状结构
+        self.case_search_combo.Clear()  # 先清除之前的选项
+        self.case_search_combo.AppendItems(all_filenames)  # 添加新的选项
         self.case_search_combo.SetValue(self.filename)
         self.testCases = self.PopulateTree(self.filename)
         self.tree.Bind(wx.EVT_TREE_SEL_CHANGED, self.OnSelChanged)
@@ -298,7 +310,9 @@ class TestCasesPanel(wx.Panel):
         # 当用例为 block 时，需要主动去停止 messageLoop 的循环
         try:
             win32api.PostThreadMessage(self.msg_loop_thread_id, win32con.WM_QUIT, 0, 0)
-        except pywintypes.error:
+        except pywintypes.error as e:
+            logger.warning(f"{e}")
+        except:
             pass
         clicked_button = event.GetEventObject()
         case_result = clicked_button.GetLabel()
@@ -339,7 +353,6 @@ class TestCasesPanel(wx.Panel):
         self.sql.update_start_time_by_case_id(self.CaseID, action, num_test)
         # 初始化终止信号
         self.patvs_monitor.stop_event = True
-        global_state.set_stop_event(False)
         # 使用多线程异步运行，防止GUI界面卡死
         if action == '时间':
             self.add_log_message(f"您选择的动作是: {action}，目标测试次数: {num_test}")
@@ -479,6 +492,11 @@ class TestCasesPanel(wx.Panel):
             else:
                 self.sql.insert_case_by_filename(self.filename, tester, case_data)
             # 更新显示
+            all_filenames = self.sql.select_all_filename_by_tester(tester)
+            self.tree.DeleteAllItems()  # 清空现有的树状结构
+            self.case_search_combo.Clear()  # 先清除之前的选项
+            self.case_search_combo.AppendItems(all_filenames)  # 添加新的选项
+            self.case_search_combo.SetValue(self.filename)
             self.case_search_combo.SetValue(self.filename)
             self.testCases = self.PopulateTree(self.filename)
             # 使用 partial可以提前填充一个参数，得到一个只需要一个参数的新函数
@@ -684,6 +702,7 @@ class TestCasesPanel(wx.Panel):
         更新标签
         """
         self.calculate_result = self.sql.calculate_progress_and_pass_rate(filename)
+        self.case_time_total.SetLabel(f"总耗时:{self.calculate_result['case_time_count']}")
         self.case_total.SetLabel(f"用例总数:{self.calculate_result['case_count']}")
         self.executed_cases.SetLabel(f"已执行用例:{self.calculate_result['executed_cases_count']}")
         self.test_progress.SetLabel(f"测试进度:{self.calculate_result['execution_progress']}")

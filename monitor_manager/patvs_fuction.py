@@ -207,7 +207,6 @@ class Patvs_Fuction():
 
         while device_unplug_cycles < target_cycles or s3_sleep_events < target_cycles:
             if device_unplug_cycles < target_cycles:
-                logger.info(333333333333333333333333)
                 device_unplug_cycles = self.monitor_device_plug_changes(target_cycles - device_unplug_cycles)
 
             if s3_sleep_events < target_cycles:
@@ -219,7 +218,6 @@ class Patvs_Fuction():
             elif not self.stop_event:
                 break
             time.sleep(1)
-            logger.info(111111111111111111111111111111)
         message = (
             f"Reached target cycles. Plug/unplug cycles: {device_unplug_cycles}, S3 sleep events: {s3_sleep_events}")
         wx.CallAfter(self.window.add_log_message, message)
