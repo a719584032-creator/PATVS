@@ -12,6 +12,7 @@ import win32evtlogutil
 import win32con
 import pytz
 import datetime
+from pynput import keyboard
 
 
 class Patvs_Fuction():
@@ -192,11 +193,47 @@ class Patvs_Fuction():
         wx.CallAfter(self.window.add_log_message, message)
         wx.CallAfter(self.window.after_test)
 
+
+    def test_count_restart_events(self, start_time, target_cycles):
+        hand = win32evtlog.OpenEventLog(None, "System")
+        flags = win32evtlog.EVENTLOG_BACKWARDS_READ | win32evtlog.EVENTLOG_SEQUENTIAL_READ
+        total = 0
+        start_time = datetime.datetime.strptime(start_time, "%Y-%m-%d %H:%M:%S")
+        try:
+            events = win32evtlog.ReadEventLog(hand, flags, 0)
+            while self.stop_event and total < target_cycles:
+                for event in events:
+                    if event.EventID == 1074:
+                        occurred_time_str = str(event.TimeGenerated)
+                        try:
+                            occurred_time = datetime.datetime.strptime(occurred_time_str, "%Y/%m/%d %H:%M:%S")
+                        except ValueError:
+                            occurred_time = datetime.datetime.strptime(occurred_time_str, "%Y-%m-%d %H:%M:%S")
+                        if occurred_time > start_time:
+                            total += 1
+                            logger.info(f'{event.EventID}')
+                            logger.info(occurred_time)
+                            message = f"Restart cycle completed: {total} times"
+                            wx.CallAfter(self.window.add_log_message, message)
+                            if total >= target_cycles:
+                                break
+                if total < target_cycles:
+                    events = win32evtlog.ReadEventLog(hand, flags, 0)
+                else:
+                    break
+        finally:
+            win32evtlog.CloseEventLog(hand)
+        message = (
+            f"Reached target cycles. Restart events: {total}")
+        wx.CallAfter(self.window.add_log_message, message)
+        wx.CallAfter(self.window.after_test)
+
     def monitor_device_plug_changes(self, target_cycles):
         notification = Notification(target_cycles, self.window)
         notification.messageLoop()
         wx.CallAfter(self.window.after_test)
         return target_cycles
+
     def s3_and_device_plug_changes(self, target_cycles):
         # 设定开始时间为当前时间
         start_time = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
@@ -223,9 +260,26 @@ class Patvs_Fuction():
         wx.CallAfter(self.window.add_log_message, message)
         wx.CallAfter(self.window.after_test)
 
+    def monitor_keystrokes(self, target_cycles):
+        key_count = 0
+
+        def on_press(key):
+            nonlocal key_count
+            key_count += 1
+            message = (f"Key pressed: {key}. Total count: {key_count}")
+            wx.CallAfter(self.window.add_log_message, message)
+            if key_count >= target_cycles or not self.stop_event:
+                message = ("Reached target keystroke count. Exiting...")
+                wx.CallAfter(self.window.add_log_message, message)
+                wx.CallAfter(self.window.after_test)
+                return False  # Stop the listener
+
+        # Collect events until the target keystroke count is reached
+        with keyboard.Listener(on_press=on_press) as listener:
+            listener.join()
 
 
 if __name__ == '__main__':
-    a = Patvs_Fuction(1)
+    a = Patvs_Fuction(1,True)
     s3_sleep_count = a.count_s3_sleep_events(start_time='2024/3/19 17:51:50')
     print(f"The system entered S3 sleep state {s3_sleep_count} times.")

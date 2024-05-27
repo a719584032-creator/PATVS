@@ -7,6 +7,7 @@ from common.tools import Public
 import os
 import sys
 import math
+from werkzeug.security import generate_password_hash, check_password_hash
 
 
 class Patvs_SQL():
@@ -19,7 +20,8 @@ class Patvs_SQL():
             cur.execute("SELECT StartTime,TestResult FROM TestCase WHERE caseID = ?", (case_id,))
             result = cur.fetchall()
             logger.info(result)
-            if result and result[0][0] is not None and result[0][1] is None:  # 确保result的查询结果不是None并且 StartTime（result[0]）也位置None
+            if result and result[0][0] is not None and result[0][
+                1] is None:  # 确保result的查询结果不是None并且 StartTime（result[0]）也位置None
                 logger.info(f"已有执行记录时间 {result},仅修改监控动作和次数")
                 cur.execute("UPDATE TestCase SET Actions = ?, ActionsNum = ? WHERE CaseID = ?",
                             (actions, actions_num, case_id))
@@ -100,9 +102,15 @@ class Patvs_SQL():
         else:
             return False
 
-    def select_all_filename_by_tester(self, tester):
+    def select_all_filename_by_username(self, username):
         cur = self.conn.cursor()
-        cur.execute("SELECT FileName FROM TestFile WHERE Tester=?", (tester,))
+        query = """
+        SELECT tf.FileName
+        FROM TestFile tf
+        JOIN users u ON tf.TesterID = u.userId
+        WHERE u.username = ?
+        """
+        cur.execute(query, (username,))
         result = cur.fetchall()
         cur.close()
         logger.info(result)
@@ -111,14 +119,14 @@ class Patvs_SQL():
         else:
             return None
 
-    def select_all_tester(self):
+    def select_userid_by_username(self, username):
         cur = self.conn.cursor()
-        cur.execute("SELECT Tester FROM TestFile")
+        cur.execute("SELECT userId FROM users WHERE userId=?", (username,))
         result = cur.fetchall()
         cur.close()
         logger.info(result)
         if result:
-            return list({res[0] for res in result})
+            return result[0]
         else:
             return None
 
@@ -351,8 +359,35 @@ class Patvs_SQL():
         finally:
             cur.close()
 
+    def add_user(self, username, password):
+        password_hash = generate_password_hash(password)
+        cur = self.conn.cursor()
+
+        cur.execute('INSERT INTO users (username, password_hash) VALUES (?, ?)',
+                    (username, password_hash))
+        self.conn.commit()
+
+    def validate_user(self, username, password):
+        cur = self.conn.cursor()
+        user = cur.execute('SELECT * FROM users WHERE username = ?', (username,)).fetchone()
+        logger.info(user)
+        if user and check_password_hash(user[2], password):
+            return True, user[4]
+        return False, None
+
+    def change_user_password(self, username, old_password, new_password):
+        cur = self.conn.cursor()
+        user = cur.execute('SELECT * FROM users WHERE username = ?', (username,)).fetchone()
+        if user and check_password_hash(user[2], old_password):
+            new_password_hash = generate_password_hash(new_password)
+            cur.execute('UPDATE users SET password_hash = ? WHERE username = ?',
+                        (new_password_hash, username))
+            self.conn.commit()
+            return True
+        return False
+
 
 if __name__ == '__main__':
     data = Patvs_SQL()
-    file = data.select_start_time(22)
-    print(file)
+    data.validate_user('zhangjq9', '123456')
+

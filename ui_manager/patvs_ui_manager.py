@@ -48,13 +48,13 @@ class ResetButtonRenderer(wx.grid.GridCellRenderer):
 
 
 class TestCasesPanel(wx.Panel):
-    def __init__(self, parent):
+    def __init__(self, parent, username):
         super().__init__(parent)
         self.sql = Patvs_SQL()  # 连接到数据库
         # 在主线程中创建一个事件,用来通知阻塞情况下终止线程
         self.stop_event = True
         self.patvs_monitor = Patvs_Fuction(self, self.stop_event)
-
+        self.username = username  # 保存用户名
         self.splitter = wx.SplitterWindow(self)
         # 创建另一个 splitter 来分割 self.content 和新的日志区域
         self.log_splitter = wx.SplitterWindow(self.splitter)
@@ -104,13 +104,7 @@ class TestCasesPanel(wx.Panel):
         self.annex_button.Bind(wx.EVT_BUTTON, self.select_annex)
 
         # 用例筛选下拉框
-        # 第一个下拉框，选择tester
-        all_testers = self.sql.select_all_tester()
-        self.tester_combo = wx.ComboBox(self, choices=all_testers, style=wx.CB_READONLY)
-        self.tester_combo.Bind(wx.EVT_COMBOBOX, self.on_tester_select)
-
-        # 第二个下拉框，初始时为空，后续根据选择的tester填充
-        self.case_search_combo = wx.ComboBox(self, choices=[], style=wx.CB_READONLY)
+        self.case_search_combo = wx.ComboBox(self, choices=self.sql.select_all_filename_by_username(username))
         self.case_search_combo.Bind(wx.EVT_COMBOBOX, self.on_case_select)
 
         # 图片
@@ -118,8 +112,9 @@ class TestCasesPanel(wx.Panel):
         imageCtrl = wx.StaticBitmap(self, bitmap=lenovo_bitmap)
 
         # 下拉框 监控动作、测试次数
-        self.monitor_actions = ['时间', 'power-plug/unplug', 'S3+power-plug/unplug', 'S4', 'S5', 'device-plug/unplug',
-                                'S3+device-plug/unplug', 'mouse', 'Restart']
+        self.monitor_actions = ['时间', 'power-plug/unplug', 'S3+power-plug/unplug', 'S4', 'S5', 'Restart', 'keystrokes',
+                                'device-plug/unplug',
+                                'S3+device-plug/unplug', 'mouse']
         self.tests_num = ['1', '3', '5', '10', '20', '50', '100']
         self.actions_box = wx.ComboBox(self, choices=self.monitor_actions)
         self.tests_box = wx.ComboBox(self, choices=self.tests_num)
@@ -175,10 +170,10 @@ class TestCasesPanel(wx.Panel):
 
         # 单独创建一个水平盒子来放置 case_search_combo 下拉框
         caseSearchSizer = wx.BoxSizer(wx.HORIZONTAL)
-        self.testerLabel = wx.StaticText(self, label="测试人员")
+        self.testerLabel = wx.StaticText(self, label=f"测试人员: {username}")
         #    self.testerLabel.SetFont(font)
         caseSearchSizer.Add(self.testerLabel, 0, wx.ALL, 5)
-        caseSearchSizer.Add(self.tester_combo, 0, wx.ALL, 5)
+
         self.caseLabel = wx.StaticText(self, label="测试用例")
         #     self.caseLabel.SetFont(font)
         caseSearchSizer.Add(self.caseLabel, 0, wx.ALL, 5)
@@ -242,14 +237,6 @@ class TestCasesPanel(wx.Panel):
         # 如果有记录，显示上一次打开的页面
         self.restore_state()
 
-    def on_tester_select(self, event):
-        # 当选择了特定的tester时，获取对应的文件名并更新第二个下拉框
-        tester = self.tester_combo.GetValue()
-        all_filenames = self.sql.select_all_filename_by_tester(tester)
-        self.tree.DeleteAllItems()  # 清空现有的树状结构
-        self.case_search_combo.Clear()  # 先清除之前的选项
-        self.case_search_combo.AppendItems(all_filenames)  # 添加新的选项
-
     def on_case_select(self, event):
         # 处理下拉框选择事件
         self.filename = self.case_search_combo.GetValue()
@@ -267,7 +254,7 @@ class TestCasesPanel(wx.Panel):
         # 获取当前选中的 filename，并将其加入状态字典
         state = {
             'filename': self.filename if hasattr(self, 'filename') else None,
-            'tester': self.tester_combo.GetValue()
+            'tester': self.username
         }
         logger.info('Saving state.')
         # 写入状态到文件
@@ -280,21 +267,19 @@ class TestCasesPanel(wx.Panel):
             with open('window_state.json', 'r') as state_file:
                 state = json.load(state_file)
                 # 恢复 filename
-                if 'filename' in state and state['filename'] is not None:
+                if state['tester'] == self.username and 'filename' in state and state['filename'] is not None:
                     self.filename = state['filename']
-                    tester = state['tester']
-                    self.set_filename_combo(tester)
+                    self.set_filename_combo(self.filename)
         except FileNotFoundError:
             logger.info('State file not found, starting with default state.')
             self.Center()
 
-    def set_filename_combo(self, tester):
+    def set_filename_combo(self, filename):
         # 更新下拉框显示
-        self.tester_combo.SetValue(tester)
-        all_filenames = self.sql.select_all_filename_by_tester(tester)
-        self.tree.DeleteAllItems()  # 清空现有的树状结构
-        self.case_search_combo.Clear()  # 先清除之前的选项
-        self.case_search_combo.AppendItems(all_filenames)  # 添加新的选项
+
+        # self.tree.DeleteAllItems()  # 清空现有的树状结构
+        # self.case_search_combo.Clear()  # 先清除之前的选项
+
         self.case_search_combo.SetValue(self.filename)
         self.testCases = self.PopulateTree(self.filename)
         self.tree.Bind(wx.EVT_TREE_SEL_CHANGED, self.OnSelChanged)
@@ -383,6 +368,13 @@ class TestCasesPanel(wx.Panel):
                                       args=(str(start_time), int(num_test),))
             thread.setDaemon(True)
             thread.start()
+        elif action == 'Restart':
+            self.add_log_message(f"您选择的动作是: {action}，目标测试次数: {num_test}")
+            start_time = self.sql.select_start_time(self.CaseID)
+            thread = threading.Thread(target=self.patvs_monitor.test_count_restart_events,
+                                      args=(str(start_time), int(num_test),))
+            thread.setDaemon(True)
+            thread.start()
         elif action == 'device-plug/unplug':
             self.add_log_message(f"您选择的动作是: {action}，目标测试次数: {num_test}")
             msg_loop_thread = threading.Thread(target=self.patvs_monitor.monitor_device_plug_changes,
@@ -394,6 +386,14 @@ class TestCasesPanel(wx.Panel):
         elif action == 'S3+device-plug/unplug':
             self.add_log_message(f"您选择的动作是: {action}，目标测试次数: {num_test}")
             msg_loop_thread = threading.Thread(target=self.patvs_monitor.s3_and_device_plug_changes,
+                                               args=(int(num_test),))
+            msg_loop_thread.setDaemon(True)
+            msg_loop_thread.start()
+            # 获取线程ID
+            self.msg_loop_thread_id = msg_loop_thread.ident
+        elif action == 'keystrokes':
+            self.add_log_message(f"您选择的动作是: {action}，目标测试次数: {num_test}")
+            msg_loop_thread = threading.Thread(target=self.patvs_monitor.monitor_keystrokes,
                                                args=(int(num_test),))
             msg_loop_thread.setDaemon(True)
             msg_loop_thread.start()
