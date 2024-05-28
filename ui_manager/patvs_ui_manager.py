@@ -383,6 +383,7 @@ class TestCasesPanel(wx.Panel):
             msg_loop_thread.start()
             # 获取线程ID
             self.msg_loop_thread_id = msg_loop_thread.ident
+
         elif action == 'S3+device-plug/unplug':
             self.add_log_message(f"您选择的动作是: {action}，目标测试次数: {num_test}")
             msg_loop_thread = threading.Thread(target=self.patvs_monitor.s3_and_device_plug_changes,
@@ -492,7 +493,7 @@ class TestCasesPanel(wx.Panel):
             else:
                 self.sql.insert_case_by_filename(self.filename, tester, case_data)
             # 更新显示
-            all_filenames = self.sql.select_all_filename_by_tester(tester)
+            all_filenames = self.sql.select_all_filename_by_username(tester)
             self.tree.DeleteAllItems()  # 清空现有的树状结构
             self.case_search_combo.Clear()  # 先清除之前的选项
             self.case_search_combo.AppendItems(all_filenames)  # 添加新的选项

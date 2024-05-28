@@ -111,7 +111,7 @@ def run_main(file_name):
 
 
 if __name__ == '__main__':
-    file_name = 'TestPlanWithResult_K510_Keyboard_K510_Audit_test_20240411173441.xlsx'
+    file_name = 'TestPlanWithResult_M410_Mouse_PATVS软件测试(1)_20240528100806.xlsx'
     run_main(file_name)
     # data = MyExcel(file_name)
     # data.active_sheet('Case List')

@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 # 负责存储逻辑
-import sqlite3
+import mysql.connector
 from datetime import datetime
 from common.logs import logger
 from common.tools import Public
@@ -12,24 +12,29 @@ from werkzeug.security import generate_password_hash, check_password_hash
 
 class Patvs_SQL():
     def __init__(self):
-        self.conn = sqlite3.connect(r"D:\PATVS\sqlite-tools\lenovoDb")
+        self.conn = mysql.connector.connect(
+            host="rm-cn-lf63r60vh0003gto.rwlb.rds.aliyuncs.com",
+            user="yesq3_lenovo",
+            password="patvs_Lenovo",
+            database="lenovoDb"
+        )
 
     def update_start_time_by_case_id(self, case_id, actions, actions_num):
         cur = self.conn.cursor()
         try:
-            cur.execute("SELECT StartTime,TestResult FROM TestCase WHERE caseID = ?", (case_id,))
+            cur.execute("SELECT StartTime,TestResult FROM TestCase WHERE caseID = %s", (case_id,))
             result = cur.fetchall()
             logger.info(result)
-            if result and result[0][0] is not None and result[0][
-                1] is None:  # 确保result的查询结果不是None并且 StartTime（result[0]）也位置None
+            # 确保result的查询结果不是None并且 StartTime（result[0]）也位置None
+            if result and result[0][0] is not None and result[0][1] is None:
                 logger.info(f"已有执行记录时间 {result},仅修改监控动作和次数")
-                cur.execute("UPDATE TestCase SET Actions = ?, ActionsNum = ? WHERE CaseID = ?",
+                cur.execute("UPDATE TestCase SET Actions = %s, ActionsNum = %s WHERE CaseID = %s",
                             (actions, actions_num, case_id))
             else:
                 now = datetime.now()
                 formatted_now = now.strftime('%Y-%m-%d %H:%M:%S')
                 logger.info("开始记录执行时间，动作和次数")
-                cur.execute("UPDATE TestCase SET StartTime = ?, Actions = ?, ActionsNum = ? WHERE CaseID = ?",
+                cur.execute("UPDATE TestCase SET StartTime = %s, Actions = %s, ActionsNum = %s WHERE CaseID = %s",
                             (formatted_now, actions, actions_num, case_id))
         except Exception as e:
             logger.error(f"An error occurred: {e}")
@@ -42,16 +47,18 @@ class Patvs_SQL():
     def update_end_time_case_id(self, case_id, case_result, comment=None):
         cur = self.conn.cursor()
         try:
-            cur.execute(f'SELECT StartTime FROM TestCase where CaseID = ?', (case_id,))
+            cur.execute(f'SELECT StartTime FROM TestCase where CaseID = %s', (case_id,))
             result = cur.fetchone()
-            execution_time = datetime.strptime(result[0], "%Y-%m-%d %H:%M:%S")
+            # logger.info(result)
+            # logger.info(type(result))
+            # execution_time = datetime.strptime(result[0], "%Y-%m-%d %H:%M:%S")
             now = datetime.now()
-            test_time = int((now - execution_time).total_seconds())
+            test_time = int((now - result[0]).total_seconds())
             logger.info(f"测试消耗时间是 {test_time}")
             formatted_now = now.strftime('%Y-%m-%d %H:%M:%S')
             comment = comment or None  # 如果comment为空，则将其设为None
             cur.execute(
-                "UPDATE TestCase SET EndTime = ?, TestTime = ?, TestResult = ?, comment = ? WHERE CaseID = ?",
+                "UPDATE TestCase SET EndTime = %s, TestTime = %s, TestResult = %s, comment = %s WHERE CaseID = %s",
                 (formatted_now, test_time, case_result, comment, case_id))
         except Exception as e:
             logger.error(f"An error occurred: {e}")
@@ -61,16 +68,26 @@ class Patvs_SQL():
         finally:
             cur.close()
 
-    def insert_case_by_filename(self, file_name, tester, case_data):
+    def insert_case_by_filename(self, file_name, username, case_data):
         cur = self.conn.cursor()
         try:
-            logger.info(f"start inserting {file_name} into DB ")
-            cur.execute("INSERT INTO TestFile (FileName, Tester) VALUES (?, ?)", (file_name, tester))
-            # 获取刚刚插入的 TestFile 记录的 FileID
+            # 获取TesterID
+            cur.execute("SELECT userId FROM users WHERE username = %s", (username,))
+            user_id = cur.fetchone()
+            if not user_id:
+                raise ValueError(f"User {username} not found")
+            user_id = user_id[0]
+
+            logger.info(f"start inserting {file_name} into DB with TesterID {user_id}")
+
+            # 插入TestFile记录
+            cur.execute("INSERT INTO TestFile (FileName, TesterID) VALUES (%s, %s)", (file_name, user_id))
             file_id = cur.lastrowid
+
+            # 插入TestCase记录
             for case in case_data:
                 cur.execute(
-                    "INSERT INTO TestCase (ModelName, CaseTitle, CaseSteps, ExpectedResult, FileID) VALUES (?, ?, ?, ?, ?)",
+                    "INSERT INTO TestCase (ModelName, CaseTitle, CaseSteps, ExpectedResult, FileID) VALUES (%s, %s, %s, %s, %s)",
                     (case[0], case[1], case[2], case[3], file_id))
         except Exception as e:
             logger.error(f"An error occurred: {e}")
@@ -82,19 +99,19 @@ class Patvs_SQL():
 
     def select_case_by_filename(self, filename):
         cur = self.conn.cursor()
-        cur.execute(f'SELECT FileID FROM TestFile where Filename = ?', (filename,))
+        cur.execute(f'SELECT FileID FROM TestFile where Filename = %s', (filename,))
         result = cur.fetchone()
         if result:
             file_id = result[0]
         else:
             file_id = 1
-        cur.execute(f'SELECT * FROM TestCase where FileID = ?', (file_id,))
+        cur.execute(f'SELECT * FROM TestCase where FileID = %s', (file_id,))
         all_case = cur.fetchall()
         return all_case
 
     def select_filename_by_name(self, file_name):
         cur = self.conn.cursor()
-        cur.execute("SELECT FileName FROM TestFile WHERE FileName=?", (file_name,))
+        cur.execute("SELECT FileName FROM TestFile WHERE FileName=%s", (file_name,))
         result = cur.fetchone()
         cur.close()
         if result:
@@ -108,7 +125,7 @@ class Patvs_SQL():
         SELECT tf.FileName
         FROM TestFile tf
         JOIN users u ON tf.TesterID = u.userId
-        WHERE u.username = ?
+        WHERE u.username = %s
         """
         cur.execute(query, (username,))
         result = cur.fetchall()
@@ -117,11 +134,11 @@ class Patvs_SQL():
         if result:
             return [res[0] for res in result]
         else:
-            return None
+            return []
 
     def select_userid_by_username(self, username):
         cur = self.conn.cursor()
-        cur.execute("SELECT userId FROM users WHERE userId=?", (username,))
+        cur.execute("SELECT userId FROM users WHERE userId=%s", (username,))
         result = cur.fetchall()
         cur.close()
         logger.info(result)
@@ -132,7 +149,7 @@ class Patvs_SQL():
 
     def select_fileid_by_file_name(self, file_name):
         cur = self.conn.cursor()
-        cur.execute("SELECT FileID FROM TestFile WHERE FileName=?", (file_name,))
+        cur.execute("SELECT FileID FROM TestFile WHERE FileName=%s", (file_name,))
         result = cur.fetchone()
         logger.info(f'fileID is {result}')
         if result:
@@ -142,12 +159,12 @@ class Patvs_SQL():
 
     def select_cases_by_case_id(self, case_id):
         cur = self.conn.cursor()
-        cur.execute("SELECT FileID FROM TestCase WHERE CaseID=?", (case_id,))
+        cur.execute("SELECT FileID FROM TestCase WHERE CaseID=%s", (case_id,))
         result = cur.fetchone()
         file_id = result[0] if result else None
         logger.info(f'FileID is {file_id}')
         if file_id:
-            cur.execute("SELECT * FROM TestCase WHERE FileID=?", (file_id,))
+            cur.execute("SELECT * FROM TestCase WHERE FileID=%s", (file_id,))
             all_cases = cur.fetchall()
             return all_cases
         else:
@@ -159,7 +176,7 @@ class Patvs_SQL():
         """
         cur = self.conn.cursor()
         try:
-            cur.execute("UPDATE TestCase SET TestNum = ? WHERE CaseID = ?", (test_num, case_id))
+            cur.execute("UPDATE TestCase SET TestNum = %s WHERE CaseID = %s", (test_num, case_id))
         except Exception as e:
             logger.error(f"An error occurred: {e}")
             self.conn.rollback()
@@ -170,7 +187,7 @@ class Patvs_SQL():
 
     def select_test_num_by_id(self, case_id):
         cur = self.conn.cursor()
-        cur.execute('SELECT TestNum FROM TestCase WHERE CaseID = ?', (case_id,))
+        cur.execute('SELECT TestNum FROM TestCase WHERE CaseID = %s', (case_id,))
         result = cur.fetchone()
         cur.close()
         if result:
@@ -194,7 +211,7 @@ class Patvs_SQL():
                     Actions = NULL, 
                     ActionsNum = NULL, 
                     TestNum = NULL
-                WHERE CaseID = ?
+                WHERE CaseID = %s
             """, (case_id,))
         except Exception as e:
             logger.error(f"An error occurred: {e}")
@@ -212,17 +229,17 @@ class Patvs_SQL():
         """
         cur = self.conn.cursor()
         try:
-            cur.execute("SELECT FileID FROM TestFile WHERE FileName=?", (filename,))
+            cur.execute("SELECT FileID FROM TestFile WHERE FileName=%s", (filename,))
             file_id_result = cur.fetchone()
             if file_id_result:
                 file_id = file_id_result[0]
-                cur.execute("SELECT COUNT(*) FROM TestCase WHERE FileID=?", (file_id,))
+                cur.execute("SELECT COUNT(*) FROM TestCase WHERE FileID=%s", (file_id,))
                 count_result = cur.fetchone()
                 return count_result[0] if count_result else 0
             else:
                 logger.error(f"No entries found for filename: {filename}")
                 return 0
-        except sqlite3.Error as e:
+        except mysql.connector.Error as e:
             logger.error(f"An error occurred: {e.args[0]}")
             return 0
         finally:
@@ -236,11 +253,11 @@ class Patvs_SQL():
         """
         cur = self.conn.cursor()
         try:
-            cur.execute("SELECT FileID FROM TestFile WHERE FileName=?", (filename,))
+            cur.execute("SELECT FileID FROM TestFile WHERE FileName=%s", (filename,))
             file_id_result = cur.fetchone()
             if file_id_result:
                 file_id = file_id_result[0]
-                cur.execute("SELECT SUM(TestTime) FROM TestCase WHERE FileID=?", (file_id,))
+                cur.execute("SELECT SUM(TestTime) FROM TestCase WHERE FileID=%s", (file_id,))
                 count_result = cur.fetchone()
                 if count_result and count_result[0] is not None:
                     # 使用math.ceil函数将秒转换为分钟，并向上取整
@@ -251,7 +268,7 @@ class Patvs_SQL():
             else:
                 logger.error(f"No entries found for filename: {filename}")
                 return 0
-        except sqlite3.Error as e:
+        except mysql.connector.Error as e:
             logger.error(f"An error occurred: {e.args[0]}")
             return 0
         finally:
@@ -265,12 +282,12 @@ class Patvs_SQL():
         """
         cur = self.conn.cursor()
         try:
-            cur.execute("SELECT FileID FROM TestFile WHERE FileName = ?", (filename,))
+            cur.execute("SELECT FileID FROM TestFile WHERE FileName = %s", (filename,))
             result = cur.fetchone()
             if result:
                 file_id = result[0]
                 # 统计已执行的用例数量
-                cur.execute("SELECT COUNT(*) FROM TestCase WHERE FileID = ? AND TestResult IS NOT NULL", (file_id,))
+                cur.execute("SELECT COUNT(*) FROM TestCase WHERE FileID = %s AND TestResult IS NOT NULL", (file_id,))
                 executed_count = cur.fetchone()[0]
                 return executed_count
             else:
@@ -290,11 +307,11 @@ class Patvs_SQL():
         """
         cur = self.conn.cursor()
         try:
-            cur.execute("SELECT FileID FROM TestFile WHERE FileName = ?", (filename,))
+            cur.execute("SELECT FileID FROM TestFile WHERE FileName = %s", (filename,))
             result = cur.fetchone()
             if result:
                 file_id = result[0]
-                cur.execute("SELECT COUNT(*) FROM TestCase WHERE FileID = ? AND TestResult = 'Pass'", (file_id,))
+                cur.execute("SELECT COUNT(*) FROM TestCase WHERE FileID = %s AND TestResult = 'Pass'", (file_id,))
                 pass_count = cur.fetchone()[0]
                 return pass_count
             else:
@@ -340,13 +357,13 @@ class Patvs_SQL():
     def select_start_time(self, case_id):
         cur = self.conn.cursor()
         try:
-            cur.execute("SELECT StartTime FROM TestCase WHERE CaseID = ?", (case_id,))
+            cur.execute("SELECT StartTime FROM TestCase WHERE CaseID = %s", (case_id,))
             result = cur.fetchone()
             logger.info(result)
             if result[0] is None:
                 # 查询结果为空，获取当前时间
                 current_time = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-                cur.execute("UPDATE TestCase SET StartTime = ? WHERE CaseID = ?", (current_time, case_id))
+                cur.execute("UPDATE TestCase SET StartTime = %s WHERE CaseID = %s", (current_time, case_id))
                 self.conn.commit()
                 # 返回当前时间
                 return current_time
@@ -363,13 +380,14 @@ class Patvs_SQL():
         password_hash = generate_password_hash(password)
         cur = self.conn.cursor()
 
-        cur.execute('INSERT INTO users (username, password_hash) VALUES (?, ?)',
+        cur.execute('INSERT INTO users (username, password_hash) VALUES (%s, %s)',
                     (username, password_hash))
         self.conn.commit()
 
     def validate_user(self, username, password):
         cur = self.conn.cursor()
-        user = cur.execute('SELECT * FROM users WHERE username = ?', (username,)).fetchone()
+        cur.execute('SELECT * FROM users WHERE username = %s', (username,))
+        user = cur.fetchone()
         logger.info(user)
         if user and check_password_hash(user[2], password):
             return True, user[4]
@@ -377,17 +395,25 @@ class Patvs_SQL():
 
     def change_user_password(self, username, old_password, new_password):
         cur = self.conn.cursor()
-        user = cur.execute('SELECT * FROM users WHERE username = ?', (username,)).fetchone()
+        cur.execute('SELECT * FROM users WHERE username = %s', (username,))
+        user = cur.fetchone()
         if user and check_password_hash(user[2], old_password):
             new_password_hash = generate_password_hash(new_password)
-            cur.execute('UPDATE users SET password_hash = ? WHERE username = ?',
+            cur.execute('UPDATE users SET password_hash = %s WHERE username = %s',
                         (new_password_hash, username))
             self.conn.commit()
             return True
         return False
 
+    def sell_all(self):
+        cur = self.conn.cursor()
+        cur.execute('SELECT * FROM TestCase')
+        user = cur.fetchall()
+        logger.info(user)
 
 if __name__ == '__main__':
     data = Patvs_SQL()
+    #  data.add_user('yesq3', '123456')
     data.validate_user('zhangjq9', '123456')
-
+    data.select_all_filename_by_username('yesq3')
+    data.sell_all()

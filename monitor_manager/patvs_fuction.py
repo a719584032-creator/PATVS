@@ -1,5 +1,7 @@
 # -*- coding: utf-8 -*-
 # 负责监控逻辑
+import random
+
 import wx
 from common.logs import logger
 from monitor_manager.devicerm import Notification
@@ -229,10 +231,12 @@ class Patvs_Fuction():
         wx.CallAfter(self.window.after_test)
 
     def monitor_device_plug_changes(self, target_cycles):
-        notification = Notification(target_cycles, self.window)
+        logger.info(f'---------------{target_cycles}---------------------')
+        num = random.randint(1,100)
+        notification = f'notification{num}'
+        notification = Notification(0, target_cycles, self.window)
         notification.messageLoop()
         wx.CallAfter(self.window.after_test)
-        return target_cycles
 
     def s3_and_device_plug_changes(self, target_cycles):
         # 设定开始时间为当前时间
