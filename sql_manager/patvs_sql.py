@@ -68,70 +68,107 @@ class Patvs_SQL():
         finally:
             cur.close()
 
-    def insert_case_by_filename(self, file_name, username, case_data):
-        cur = self.conn.cursor()
+    def insert_case_by_filename(self, plan_name, project_name, sheet_name, tester, workloading, filename, cases, model_name):
+        cursor = self.conn.cursor()
+        filename = os.path.basename(filename)  # 获取文件名
         try:
-            # 获取TesterID
-            cur.execute("SELECT userId FROM users WHERE username = %s", (username,))
-            user_id = cur.fetchone()
-            if not user_id:
-                raise ValueError(f"User {username} not found")
-            user_id = user_id[0]
+            # 查询是否已经存在相同的 plan_name
+            cursor.execute("SELECT id FROM TestPlan WHERE plan_name = %s", (plan_name,))
+            result = cursor.fetchone()
 
-            logger.info(f"start inserting {file_name} into DB with TesterID {user_id}")
+            if result:
+                # 已经存在相同的 plan_name，获取其 id
+                plan_id = result[0]
+            else:
+                # 插入新的 TestPlan 记录
+                plan_query = """
+                        INSERT INTO TestPlan (plan_name, filename)
+                        VALUES (%s, %s)
+                    """
+                cursor.execute(plan_query, (plan_name, filename))
+                plan_id = cursor.lastrowid
 
-            # 插入TestFile记录
-            cur.execute("INSERT INTO TestFile (FileName, TesterID) VALUES (%s, %s)", (file_name, user_id))
-            file_id = cur.lastrowid
+            # 检查是否已经存在相同的 sheet_name
+            cursor.execute("SELECT id FROM TestSheet WHERE sheet_name = %s AND plan_id = %s", (sheet_name, plan_id))
+            sheet_result = cursor.fetchone()
 
-            # 插入TestCase记录
-            for case in case_data:
-                cur.execute(
-                    "INSERT INTO TestCase (ModelName, CaseTitle, CaseSteps, ExpectedResult, FileID) VALUES (%s, %s, %s, %s, %s)",
-                    (case[0], case[1], case[2], case[3], file_id))
-        except Exception as e:
-            logger.error(f"An error occurred: {e}")
-            self.conn.rollback()
-        else:
+            if sheet_result:
+                logger.warning(
+                    f"Sheet '{sheet_name}' already exists for plan '{plan_name}', skipping insertion of sheet and cases.")
+                return  # 如果 sheet_name 已经存在，直接跳过后续操作
+            else:
+                # 插入新的 TestSheet 记录
+                sheet_query = """
+                        INSERT INTO TestSheet (sheet_name, project_name, tester, workloading, plan_id)
+                        VALUES (%s, %s, %s, %s, %s)
+                    """
+                cursor.execute(sheet_query, (sheet_name, project_name, tester, workloading, plan_id))
+                sheet_id = cursor.lastrowid
+
+                # 插入到 TestCase 表
+                case_query = """
+                        INSERT INTO TestCase (ModelName, CaseTitle, CaseSteps, ExpectedResult, sheet_id)
+                        VALUES (%s, %s, %s, %s, %s)
+                    """
+                for case in cases:
+                    for model in model_name:
+                        cursor.execute(case_query, (model, case['title'], case['steps'], case['expected'], sheet_id))
+
+            # 提交事务
             self.conn.commit()
+        except BaseException as err:
+            logger.error(f"Error: {err}")
+            self.conn.rollback()
+            raise f"Error: {err}"
         finally:
-            cur.close()
+            cursor.close()
 
-    def select_case_by_filename(self, filename):
-        cur = self.conn.cursor()
-        cur.execute(f'SELECT FileID FROM TestFile where Filename = %s', (filename,))
-        result = cur.fetchone()
-        if result:
-            file_id = result[0]
-        else:
-            file_id = 1
-        cur.execute(f'SELECT * FROM TestCase where FileID = %s', (file_id,))
-        all_case = cur.fetchall()
-        return all_case
-
-    def select_filename_by_name(self, file_name):
-        cur = self.conn.cursor()
-        cur.execute("SELECT FileName FROM TestFile WHERE FileName=%s", (file_name,))
-        result = cur.fetchone()
-        cur.close()
-        if result:
-            return True
-        else:
-            return False
-
-    def select_all_filename_by_username(self, username):
+    def select_case_by_sheet_name(self, sheet_name):
         cur = self.conn.cursor()
         query = """
-        SELECT tf.FileName
-        FROM TestFile tf
-        JOIN users u ON tf.TesterID = u.userId
-        WHERE u.username = %s
+        SELECT tc.*
+        FROM TestCase tc
+        JOIN TestSheet ts ON tc.sheet_id = ts.id
+        WHERE ts.sheet_name = %s
+        """
+        cur.execute(query, (sheet_name,))
+        all_case = cur.fetchall()
+        cur.close()
+        logger.info(f'Cases for sheet_name {sheet_name}: {all_case}')
+        return all_case
+
+    def select_all_plan_names_by_username(self, username):
+        cur = self.conn.cursor()
+        query = """
+        SELECT DISTINCT tp.plan_name
+        FROM TestPlan tp
+        JOIN TestSheet ts ON tp.id = ts.plan_id
+        WHERE ts.tester = %s
         """
         cur.execute(query, (username,))
         result = cur.fetchall()
         cur.close()
         logger.info(result)
         if result:
+            # 返回所有 plan_name 的列表
+            return [res[0] for res in result]
+        else:
+            return []
+
+    def select_all_sheet_names_by_plan_and_username(self, plan_name, username):
+        cur = self.conn.cursor()
+        query = """
+        SELECT ts.sheet_name
+        FROM TestSheet ts
+        JOIN TestPlan tp ON ts.plan_id = tp.id
+        WHERE tp.plan_name = %s AND ts.tester = %s
+        """
+        cur.execute(query, (plan_name, username))
+        result = cur.fetchall()
+        cur.close()
+        logger.info(result)
+        if result:
+            # 返回所有 sheet_name 的列表
             return [res[0] for res in result]
         else:
             return []
@@ -147,24 +184,34 @@ class Patvs_SQL():
         else:
             return None
 
-    def select_fileid_by_file_name(self, file_name):
+    def select_filename_by_filename(self, filename):
         cur = self.conn.cursor()
-        cur.execute("SELECT FileID FROM TestFile WHERE FileName=%s", (file_name,))
+        cur.execute("SELECT filename FROM TestPlan WHERE filename=%s", (filename,))
         result = cur.fetchone()
-        logger.info(f'fileID is {result}')
+        logger.info(f'filename is {result}')
         if result:
             return result[0]
         else:
-            return None
+            return False
+
+    def select_plan_name_by_filename(self, filename):
+        cur = self.conn.cursor()
+        cur.execute("SELECT plan_name FROM TestPlan WHERE filename=%s", (filename,))
+        result = cur.fetchone()
+        logger.info(f'plan_name is {result}')
+        if result:
+            return result[0]
+        else:
+            return False
 
     def select_cases_by_case_id(self, case_id):
         cur = self.conn.cursor()
-        cur.execute("SELECT FileID FROM TestCase WHERE CaseID=%s", (case_id,))
+        cur.execute("SELECT sheet_id FROM TestCase WHERE CaseID=%s", (case_id,))
         result = cur.fetchone()
         file_id = result[0] if result else None
-        logger.info(f'FileID is {file_id}')
+        logger.info(f'sheet_id is {file_id}')
         if file_id:
-            cur.execute("SELECT * FROM TestCase WHERE FileID=%s", (file_id,))
+            cur.execute("SELECT * FROM TestCase WHERE sheet_id=%s", (file_id,))
             all_cases = cur.fetchall()
             return all_cases
         else:
@@ -221,23 +268,23 @@ class Patvs_SQL():
         finally:
             cur.close()
 
-    def count_case_by_filename(self, filename):
+    def count_case_by_sheet_name(self, sheet_name):
         """
         统计用例总数
-        :param filename: 测试文件的名称
+        :param sheet_name: 测试sheet页的名称
         :return: 返回该测试文件中的用例总数
         """
         cur = self.conn.cursor()
         try:
-            cur.execute("SELECT FileID FROM TestFile WHERE FileName=%s", (filename,))
+            cur.execute("SELECT id FROM TestSheet WHERE sheet_name=%s", (sheet_name,))
             file_id_result = cur.fetchone()
             if file_id_result:
                 file_id = file_id_result[0]
-                cur.execute("SELECT COUNT(*) FROM TestCase WHERE FileID=%s", (file_id,))
+                cur.execute("SELECT COUNT(*) FROM TestCase WHERE sheet_id=%s", (file_id,))
                 count_result = cur.fetchone()
                 return count_result[0] if count_result else 0
             else:
-                logger.error(f"No entries found for filename: {filename}")
+                logger.error(f"No entries found for sheet_name: {sheet_name}")
                 return 0
         except mysql.connector.Error as e:
             logger.error(f"An error occurred: {e.args[0]}")
@@ -245,19 +292,19 @@ class Patvs_SQL():
         finally:
             cur.close()
 
-    def count_case_time_by_filename(self, filename):
+    def count_case_time_by_sheet_name(self, sheet_name):
         """
         统计总用例耗时
-        :param filename: 测试文件的名称
+        :param sheet_name: 测试文件的名称
         :return: 返回该测试文件中的总用例耗时
         """
         cur = self.conn.cursor()
         try:
-            cur.execute("SELECT FileID FROM TestFile WHERE FileName=%s", (filename,))
+            cur.execute("SELECT id FROM TestSheet WHERE sheet_name=%s", (sheet_name,))
             file_id_result = cur.fetchone()
             if file_id_result:
                 file_id = file_id_result[0]
-                cur.execute("SELECT SUM(TestTime) FROM TestCase WHERE FileID=%s", (file_id,))
+                cur.execute("SELECT SUM(TestTime) FROM TestCase WHERE sheet_id=%s", (file_id,))
                 count_result = cur.fetchone()
                 if count_result and count_result[0] is not None:
                     # 使用math.ceil函数将秒转换为分钟，并向上取整
@@ -266,7 +313,7 @@ class Patvs_SQL():
                 else:
                     return 0
             else:
-                logger.error(f"No entries found for filename: {filename}")
+                logger.error(f"No entries found for filename: {sheet_name}")
                 return 0
         except mysql.connector.Error as e:
             logger.error(f"An error occurred: {e.args[0]}")
@@ -274,24 +321,24 @@ class Patvs_SQL():
         finally:
             cur.close()
 
-    def count_executed_case_by_filename(self, filename):
+    def count_executed_case_by_sheet_name(self, sheet_name):
         """
         统计已执行用例数
-        :param filename: 测试文件的名称
+        :param sheet_name: 测试文件的名称
         :return: 返回该测试文件中已执行的用例数
         """
         cur = self.conn.cursor()
         try:
-            cur.execute("SELECT FileID FROM TestFile WHERE FileName = %s", (filename,))
+            cur.execute("SELECT id FROM TestSheet WHERE sheet_name = %s", (sheet_name,))
             result = cur.fetchone()
             if result:
                 file_id = result[0]
                 # 统计已执行的用例数量
-                cur.execute("SELECT COUNT(*) FROM TestCase WHERE FileID = %s AND TestResult IS NOT NULL", (file_id,))
+                cur.execute("SELECT COUNT(*) FROM TestCase WHERE sheet_id = %s AND TestResult IS NOT NULL", (file_id,))
                 executed_count = cur.fetchone()[0]
                 return executed_count
             else:
-                logger.error(f"No test file found with the name: {filename}")
+                logger.error(f"No test file found with the name: {sheet_name}")
                 return 0
         except Exception as e:
             logger.error(f"An error occurred: {e}")
@@ -299,23 +346,23 @@ class Patvs_SQL():
         finally:
             cur.close()
 
-    def count_pass_rate_by_filename(self, filename):
+    def count_pass_rate_by_sheet_name(self, sheet_name):
         """
         统计通过用例
-        :param filename: 测试文件的名称
+        :param sheet_name: 测试文件的名称
         :return: 返回该测试文件中已通过的用例数
         """
         cur = self.conn.cursor()
         try:
-            cur.execute("SELECT FileID FROM TestFile WHERE FileName = %s", (filename,))
+            cur.execute("SELECT id FROM TestSheet WHERE sheet_name = %s", (sheet_name,))
             result = cur.fetchone()
             if result:
                 file_id = result[0]
-                cur.execute("SELECT COUNT(*) FROM TestCase WHERE FileID = %s AND TestResult = 'Pass'", (file_id,))
+                cur.execute("SELECT COUNT(*) FROM TestCase WHERE sheet_id = %s AND TestResult = 'Pass'", (file_id,))
                 pass_count = cur.fetchone()[0]
                 return pass_count
             else:
-                logger.error(f"No test file found with the name: {filename}")
+                logger.error(f"No test file found with the name: {sheet_name}")
                 return 0
         except Exception as e:
             logger.error(f"An error occurred: {e}")
@@ -323,19 +370,19 @@ class Patvs_SQL():
         finally:
             cur.close()
 
-    def calculate_progress_and_pass_rate(self, filename):
+    def calculate_progress_and_pass_rate(self, sheet_name):
         """
         计算测试用例的执行进度和通过率
         :return: 返回包含执行进度和通过率的字典
         """
         # 项目耗时
-        case_time_count = self.count_case_time_by_filename(filename)
+        case_time_count = self.count_case_time_by_sheet_name(sheet_name)
         # 总用例数
-        case_count = self.count_case_by_filename(filename)
+        case_count = self.count_case_by_sheet_name(sheet_name)
         # 已执行用例数
-        executed_cases_count = self.count_executed_case_by_filename(filename)
+        executed_cases_count = self.count_executed_case_by_sheet_name(sheet_name)
         # 通过用例数
-        pass_count = self.count_pass_rate_by_filename(filename)
+        pass_count = self.count_pass_rate_by_sheet_name(sheet_name)
         # 初始化执行进度和通过率
         execution_progress = "0.00%"
         pass_rate = "0.00%"
@@ -415,5 +462,6 @@ if __name__ == '__main__':
     data = Patvs_SQL()
     #  data.add_user('yesq3', '123456')
     data.validate_user('zhangjq9', '123456')
-    data.select_all_filename_by_username('yesq3')
-    data.sell_all()
+    res = data.select_plan_name_by_filename('D:\PATVS\TestPlanWithResult_K510_Keyboard_K510_Audit_test_20240411173441.xlsx')
+    if res:
+        print(res)

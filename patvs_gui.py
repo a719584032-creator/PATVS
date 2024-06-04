@@ -128,7 +128,7 @@ class MainApp(wx.App):
             if role == 'admin':
                 frame = AdminWindow(None, title="PATVS-Admin", username=username)
             else:
-                frame = MainWindow(None, title="PATVS-1.0.0", username=username)
+                frame = MainWindow(None, title="PATVS-1.0.0.4", username=username)
 
             self.SetTopWindow(frame)
             frame.Show(True)
