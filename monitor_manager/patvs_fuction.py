@@ -6,6 +6,7 @@ import wx
 from common.logs import logger
 from monitor_manager.devicerm import Notification
 from monitor_manager.lock_screen import monitor_locks
+from pynput import mouse
 import time
 import psutil
 import win32evtlog
@@ -33,6 +34,7 @@ class Patvs_Fuction():
             count += 1
             time.sleep(1)
             logger.info(f"Running time {count} of ")
+            wx.CallAfter(self.window.add_log_message, f"Running time {count} of ")
         wx.CallAfter(self.window.after_test)
 
     def monitor_power_plug_changes(self, target_cycles):
@@ -106,9 +108,12 @@ class Patvs_Fuction():
         flags = win32evtlog.EVENTLOG_BACKWARDS_READ | win32evtlog.EVENTLOG_SEQUENTIAL_READ
         total = 0
         start_time = datetime.datetime.strptime(start_time, "%Y-%m-%d %H:%M:%S")
+
         try:
-            while self.stop_event and total < target_cycles:
+            while True:
                 events = win32evtlog.ReadEventLog(hand, flags, 0)
+                if not events:
+                    break  # If no more events, break the loop
                 for event in events:
                     if event.EventID == 507 or event.EventID == 107:
                         occurred_time_str = str(event.TimeGenerated)
@@ -120,27 +125,32 @@ class Patvs_Fuction():
                             total += 1
                             logger.info(f'{event.EventID}')
                             logger.info(occurred_time)
-                            message = f"S3 cycle completed: {total} times"
-                            wx.CallAfter(self.window.add_log_message, message)
                             if total >= target_cycles:
                                 break
-                if total > target_cycles:
-                    break
         finally:
             win32evtlog.CloseEventLog(hand)
-        message = (
-            f"Reached target cycles. S3 sleep events: {total}")
-        wx.CallAfter(self.window.add_log_message, message)
-        wx.CallAfter(self.window.after_test)
+
+        if total >= target_cycles:
+            message = f"Reached target cycles. S3 sleep events: {total}"
+            wx.CallAfter(self.window.add_log_message, message)
+            wx.CallAfter(self.window.after_test)
+        else:
+            message = f"您选择的动作是S3，当前已测试 {total} 次，目标次数为 {target_cycles} 次。是否继续测试?"
+            wx.CallAfter(self.window.add_log_message, message)
+            wx.CallAfter(self.window.show_message_box, message, total)
 
     def test_count_s4_sleep_events(self, start_time, target_cycles):
         hand = win32evtlog.OpenEventLog(None, "System")
         flags = win32evtlog.EVENTLOG_BACKWARDS_READ | win32evtlog.EVENTLOG_SEQUENTIAL_READ
         total = 0
         start_time = datetime.datetime.strptime(start_time, "%Y-%m-%d %H:%M:%S")
+        last_occurred_time = None
+
         try:
-            while self.stop_event and total < target_cycles:
+            while True:
                 events = win32evtlog.ReadEventLog(hand, flags, 0)
+                if not events:
+                    break  # If no more events, break the loop
                 for event in events:
                     if event.EventID == 1:
                         occurred_time_str = str(event.TimeGenerated)
@@ -148,22 +158,27 @@ class Patvs_Fuction():
                             occurred_time = datetime.datetime.strptime(occurred_time_str, "%Y/%m/%d %H:%M:%S")
                         except ValueError:
                             occurred_time = datetime.datetime.strptime(occurred_time_str, "%Y-%m-%d %H:%M:%S")
-                        if occurred_time > start_time:
+
+                        # Only count unique S4 events based on time
+                        if occurred_time > start_time and (
+                                last_occurred_time is None or occurred_time > last_occurred_time):
                             total += 1
+                            last_occurred_time = occurred_time
                             logger.info(f'{event.EventID}')
                             logger.info(occurred_time)
-                            message = f"S4 cycle completed: {total} times"
-                            wx.CallAfter(self.window.add_log_message, message)
                             if total >= target_cycles:
                                 break
-                if total > target_cycles:
-                    break
         finally:
             win32evtlog.CloseEventLog(hand)
-        message = (
-            f"Reached target cycles. S4 sleep events: {total}")
-        wx.CallAfter(self.window.add_log_message, message)
-        wx.CallAfter(self.window.after_test)
+
+        if total >= target_cycles:
+            message = f"Reached target cycles. S4 sleep events: {total}"
+            wx.CallAfter(self.window.add_log_message, message)
+            wx.CallAfter(self.window.after_test)
+        else:
+            message = f"您选择的动作是S4，当前已测试 {total} 次，目标次数为 {target_cycles} 次。是否继续测试?"
+            wx.CallAfter(self.window.add_log_message, message)
+            wx.CallAfter(self.window.show_message_box, message, total)
 
     def start_monitoring_s3_and_power(self, target_cycles):
         # 设定开始时间为当前时间
@@ -196,9 +211,12 @@ class Patvs_Fuction():
         flags = win32evtlog.EVENTLOG_BACKWARDS_READ | win32evtlog.EVENTLOG_SEQUENTIAL_READ
         total = 0
         start_time = datetime.datetime.strptime(start_time, "%Y-%m-%d %H:%M:%S")
+
         try:
-            while self.stop_event and total < target_cycles:
+            while True:
                 events = win32evtlog.ReadEventLog(hand, flags, 0)
+                if not events:
+                    break  # If no more events, break the loop
                 for event in events:
                     if event.EventID == 7001:
                         occurred_time_str = str(event.TimeGenerated)
@@ -206,38 +224,38 @@ class Patvs_Fuction():
                             occurred_time = datetime.datetime.strptime(occurred_time_str, "%Y/%m/%d %H:%M:%S")
                         except ValueError:
                             occurred_time = datetime.datetime.strptime(occurred_time_str, "%Y-%m-%d %H:%M:%S")
-                        logger.warning(occurred_time)
-                        logger.warning(start_time)
                         if occurred_time > start_time:
                             total += 1
                             logger.info(f'{event.EventID}')
                             logger.info(occurred_time)
-                            message = f"S5 cycle completed: {total} times"
-                            wx.CallAfter(self.window.add_log_message, message)
                             if total >= target_cycles:
                                 break
-                if total > target_cycles:
-                    break
         finally:
             win32evtlog.CloseEventLog(hand)
-        message = (
-            f"Reached target cycles. S5 sleep events: {total}")
-        wx.CallAfter(self.window.add_log_message, message)
-        wx.CallAfter(self.window.after_test)
+
+        if total >= target_cycles:
+            message = f"Reached target cycles. S5 sleep events: {total}"
+            wx.CallAfter(self.window.add_log_message, message)
+            wx.CallAfter(self.window.after_test)
+        else:
+            message = f"您选择的动作是S5，当前已测试 {total} 次，目标次数为 {target_cycles} 次。是否继续测试?"
+            wx.CallAfter(self.window.add_log_message, message)
+            wx.CallAfter(self.window.show_message_box, message, total)
 
     def test_count_restart_events(self, start_time, target_cycles):
         hand = win32evtlog.OpenEventLog(None, "System")
         flags = win32evtlog.EVENTLOG_BACKWARDS_READ | win32evtlog.EVENTLOG_SEQUENTIAL_READ
         total = 0
         start_time = datetime.datetime.strptime(start_time, "%Y-%m-%d %H:%M:%S")
-        try:
 
-            while self.stop_event and total < target_cycles:
+        try:
+            while True:
                 events = win32evtlog.ReadEventLog(hand, flags, 0)
+                if not events:
+                    break  # If no more events, break the loop
                 for event in events:
                     event_id = event.EventID & 0xFFFF  # 掩码EventID以获取实际值
                     if event_id == 1074:
-                        logger.info("Found event with ID 1074")
                         occurred_time_str = str(event.TimeGenerated)
                         try:
                             occurred_time = datetime.datetime.strptime(occurred_time_str, "%Y/%m/%d %H:%M:%S")
@@ -245,22 +263,19 @@ class Patvs_Fuction():
                             occurred_time = datetime.datetime.strptime(occurred_time_str, "%Y-%m-%d %H:%M:%S")
                         if occurred_time > start_time:
                             total += 1
-                            logger.info(f'{event.EventID}')
-                            logger.info(occurred_time)
-                            message = f"Restart cycle completed: {total} times"
-                            wx.CallAfter(self.window.add_log_message, message)
                             if total >= target_cycles:
                                 break
-                if total > target_cycles:
-                    break
-        except BaseException as e:
-            logger.error(e)
         finally:
             win32evtlog.CloseEventLog(hand)
-        message = (
-            f"Reached target cycles. Restart events: {total}")
-        wx.CallAfter(self.window.add_log_message, message)
-        wx.CallAfter(self.window.after_test)
+
+        if total >= target_cycles:
+            message = f"Reached target cycles. ReStart sleep events: {total}"
+            wx.CallAfter(self.window.add_log_message, message)
+            wx.CallAfter(self.window.after_test)
+        else:
+            message = f"您选择的动作是ReStart，当前已测试 {total} 次，目标次数为 {target_cycles} 次。是否继续测试?"
+            wx.CallAfter(self.window.add_log_message, message)
+            wx.CallAfter(self.window.show_message_box, message, total)
 
     def monitor_device_plug_changes(self, target_cycles):
         notification = Notification(0, target_cycles, self.window)
@@ -313,6 +328,25 @@ class Patvs_Fuction():
 
         # Collect events until the target keystroke count is reached
         with keyboard.Listener(on_press=on_press) as listener:
+            listener.join()
+
+    def monitor_mouse_clicks(self, target_cycles):
+        click_count = 0
+
+        def on_click(x, y, button, pressed):
+            nonlocal click_count
+            if pressed:
+                click_count += 1
+                message = f"Mouse clicked at ({x}, {y}) with {button}. Total count: {click_count}"
+                wx.CallAfter(self.window.add_log_message, message)
+                if click_count >= target_cycles or not self.stop_event:
+                    message = "Reached target click count. Exiting..."
+                    wx.CallAfter(self.window.add_log_message, message)
+                    wx.CallAfter(self.window.after_test)
+                    return False  # Stop the listener
+
+        # Collect events until the target click count is reached
+        with mouse.Listener(on_click=on_click) as listener:
             listener.join()
 
 

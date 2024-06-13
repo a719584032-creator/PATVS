@@ -52,18 +52,21 @@ def get_all_test(file_name, sheet_name):
             expected_cell = sheet.cell(row, 5)
             case['expected'] = expected_cell.value
             # 过滤掉都为 None 的数据，添加后重置字典
-            if any(case.values()):
-                filled_case = {
-                    'title': current_title if current_title is not None else 'NA',
-                    'steps': case['steps'] if case['steps'] is not None else 'NA',
-                    'expected': case['expected'] if case['expected'] is not None else 'NA'
-                }
-                all_case.append(filled_case)
-                case = {
-                    'title': None,
-                    'steps': None,
-                    'expected': None
-                }
+        if any(case.values()):
+            case = {
+                'title': current_title if current_title is not None else 'NA',
+                'steps': case['steps'] if case['steps'] is not None else 'NA',
+                'expected': case['expected'] if case['expected'] is not None else 'NA'
+            }
+            print('************************************************')
+            print(case['expected'])
+            print('************************************************')
+            all_case.append(case)
+            case = {
+                'title': None,
+                'steps': None,
+                'expected': None
+            }
     return model_name, all_case
 
 

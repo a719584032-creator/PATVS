@@ -57,21 +57,21 @@ def get_all_test(file_name, sheet_name):
             case['expected'] = expected_cell.value
             print("-" * 40)  # 打印分隔线，表示步骤和预期结果的结束
             # 过滤掉都为 None 的数据，添加后重置字典
-            if any(case.values()):
-                filled_case =  {
-                    'title': current_title if current_title is not None else 'NA',
-                    'steps': case['steps'] if case['steps'] is not None else 'NA',
-                    'expected': case['expected'] if case['expected'] is not None else 'NA'
-                }
-                print('************************************************')
-                print(filled_case['expected'])
-                print('************************************************')
-                all_case.append(filled_case)
-                case = {
-                    'title': None,
-                    'steps': None,
-                    'expected': None
-                }
+        if any(case.values()):
+            case = {
+                'title': current_title if current_title is not None else 'NA',
+                'steps': case['steps'] if case['steps'] is not None else 'NA',
+                'expected': case['expected'] if case['expected'] is not None else 'NA'
+            }
+            print('************************************************')
+            print(case['expected'])
+            print('************************************************')
+            all_case.append(case)
+            case = {
+                'title': None,
+                'steps': None,
+                'expected': None
+            }
     return model_name, all_case
 
 
@@ -200,8 +200,8 @@ def run_main(file_name):
     print(sheet_and_tester_and_workloading)
     for i in sheet_and_tester_and_workloading:
         model_name, all_case = get_all_test(file_name, i[0])
-    #    save_cases_to_excel(all_case, i[0], i[1], model_name)
-        insert_data_to_db(plan_name, project_name, i[0], i[1], i[2], file_name, all_case, model_name)
+        save_cases_to_excel(all_case, i[0], i[1], model_name)
+       # insert_data_to_db(plan_name, project_name, i[0], i[1], i[2], file_name, all_case, model_name)
 
 
 

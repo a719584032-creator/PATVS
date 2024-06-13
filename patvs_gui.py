@@ -8,6 +8,9 @@ import sys
 import os
 import win32api
 from sql_manager.patvs_sql import Patvs_SQL
+import json
+import hashlib
+import base64
 
 
 def resource_path(relative_path):
@@ -18,7 +21,7 @@ def resource_path(relative_path):
 
 class LoginDialog(wx.Dialog):
     def __init__(self, parent, title):
-        super(LoginDialog, self).__init__(parent, title=title, size=(1000, 700))
+        super(LoginDialog, self).__init__(parent, title=title, size=(400, 300))
         self.sql = Patvs_SQL()  # 连接到数据库
         self.panel = wx.Panel(self)
         self.sizer = wx.BoxSizer(wx.VERTICAL)
@@ -28,6 +31,8 @@ class LoginDialog(wx.Dialog):
 
         self.password_label = wx.StaticText(self.panel, label="Password:")
         self.password_text = wx.TextCtrl(self.panel, style=wx.TE_PASSWORD, size=(200, -1))
+
+        self.remember_me_checkbox = wx.CheckBox(self.panel, label="Remember me")
 
         self.login_button = wx.Button(self.panel, label="Login")
         self.login_button.Bind(wx.EVT_BUTTON, self.on_login)
@@ -39,6 +44,7 @@ class LoginDialog(wx.Dialog):
         self.sizer.Add(self.username_text, 0, wx.ALL | wx.CENTER, 5)
         self.sizer.Add(self.password_label, 0, wx.ALL | wx.CENTER, 5)
         self.sizer.Add(self.password_text, 0, wx.ALL | wx.CENTER, 5)
+        self.sizer.Add(self.remember_me_checkbox, 0, wx.ALL | wx.CENTER, 5)
         self.sizer.Add(self.login_button, 0, wx.ALL | wx.CENTER, 5)
         self.sizer.Add(self.change_password_button, 0, wx.ALL | wx.CENTER, 5)
 
@@ -46,19 +52,52 @@ class LoginDialog(wx.Dialog):
         self.Centre()
         self.logged_in_username = None
         self.logged_in_role = None
+        self.stored_password_hash = ""
+
+        self.load_saved_credentials()
+
+    def load_saved_credentials(self):
+        if os.path.exists('credentials.json'):
+            with open('credentials.json', 'r') as file:
+                data = json.load(file)
+                self.username_text.SetValue(data.get('username', ''))
+                self.stored_password_hash = data.get('password', '')
+                if self.stored_password_hash:
+                    self.remember_me_checkbox.SetValue(True)
+                    self.password_text.SetValue(self.decrypt_password(data.get('password')))
+
+    def encrypt_password(self, password):
+        return base64.b64encode(password.encode()).decode('utf-8')
+
+    def decrypt_password(self, hashed_password):
+        return base64.b64decode(hashed_password.encode()).decode('utf-8')
+
+    def save_credentials(self, username, password):
+        hashed_password = self.encrypt_password(password)
+        with open('credentials.json', 'w') as file:
+            json.dump({'username': username, 'password': hashed_password}, file)
+
+    def clear_credentials(self):
+        if os.path.exists('credentials.json'):
+            os.remove('credentials.json')
 
     def on_login(self, event):
         username = self.username_text.GetValue()
         password = self.password_text.GetValue()
 
+        # 校验用户凭证
         valid, role = self.sql.validate_user(username, password)
         if valid:
+            if self.remember_me_checkbox.GetValue():
+                self.save_credentials(username, password)
+            else:
+                self.clear_credentials()
+
             self.logged_in_username = username  # 记录登录后的用户名
             self.logged_in_role = role  # 记录登录后的用户角色
             self.EndModal(wx.ID_OK)
         else:
             wx.MessageBox("Invalid username or password", "Error", wx.OK | wx.ICON_ERROR)
-
 
     def on_change_password(self, event):
         dialog = ChangePasswordDialog(self)
@@ -196,5 +235,3 @@ class AdminWindow(wx.Frame):
 if __name__ == "__main__":
     app = MainApp(redirect=False)
     app.MainLoop()
-
-
