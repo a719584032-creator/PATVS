@@ -21,7 +21,7 @@ def resource_path(relative_path):
 
 class LoginDialog(wx.Dialog):
     def __init__(self, parent, title):
-        super(LoginDialog, self).__init__(parent, title=title, size=(400, 300))
+        super(LoginDialog, self).__init__(parent, title=title, size=(1000, 700 ))
         self.sql = Patvs_SQL()  # 连接到数据库
         self.panel = wx.Panel(self)
         self.sizer = wx.BoxSizer(wx.VERTICAL)
@@ -167,7 +167,7 @@ class MainApp(wx.App):
             if role == 'admin':
                 frame = AdminWindow(None, title="PATVS-Admin", username=username)
             else:
-                frame = MainWindow(None, title="PATVS-1.0.0.4", username=username)
+                frame = MainWindow(None, title="PATVS-1.0.0.7", username=username)
 
             self.SetTopWindow(frame)
             frame.Show(True)

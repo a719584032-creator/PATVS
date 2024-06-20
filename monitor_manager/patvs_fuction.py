@@ -23,18 +23,18 @@ class Patvs_Fuction():
         self.window = window
         self.stop_event = stop_event
 
-    def monitor_time(self, num):
+    def monitor_time(self, num_time, test_num):
         """
         监控时间
         """
-        count = 0
-        message = (f"please waiting {num}S")
-        wx.CallAfter(self.window.add_log_message, message)
-        while self.stop_event and count < num:
-            count += 1
-            time.sleep(1)
-            logger.info(f"Running time {count} of ")
-            wx.CallAfter(self.window.add_log_message, f"Running time {count} of ")
+        for i in range(test_num):
+            count = 0
+            wx.CallAfter(self.window.add_log_message, f"执行总次数:{test_num}, 每次时间{num_time}S, 开始执行第{i+1}次")
+            while self.stop_event and count < num_time:
+                count += 1
+                time.sleep(1)
+                logger.info(f"Running time {count} of ")
+                wx.CallAfter(self.window.add_log_message, f"Running time {count} of ")
         wx.CallAfter(self.window.after_test)
 
     def monitor_power_plug_changes(self, target_cycles):
@@ -139,12 +139,35 @@ class Patvs_Fuction():
             wx.CallAfter(self.window.add_log_message, message)
             wx.CallAfter(self.window.show_message_box, message, total)
 
+    def get_event_data(self, event):
+        # 获取详细信息中的 EventData
+        strings = win32evtlogutil.SafeFormatMessage(event, 'System')
+        return strings
+
+    def parse_time(self, time_str):
+        time_str = time_str.strip()  # 移除空格
+        try:
+            # 去除小数秒部分，只保留到秒级别
+            if '.' in time_str:
+                time_str = time_str.split('.')[0]
+            utc_time = datetime.datetime.strptime(time_str, "%Y-%m-%dT%H:%M:%S")
+            # 设置为UTC时区
+            utc_time = utc_time.replace(tzinfo=pytz.utc)
+            # 转换为东8区时间
+            beijing_time = utc_time.astimezone(pytz.timezone('Asia/Shanghai'))
+            # 格式化为所需字符串格式，不包含时区信息
+            formatted_time = datetime.datetime.strptime(beijing_time.strftime("%Y-%m-%d %H:%M:%S"), "%Y-%m-%d %H:%M:%S")
+            return formatted_time
+        except ValueError as e:
+            # 解析失败，返回None
+            logger.error(f'{e}')
+            return None
+
     def test_count_s4_sleep_events(self, start_time, target_cycles):
         hand = win32evtlog.OpenEventLog(None, "System")
         flags = win32evtlog.EVENTLOG_BACKWARDS_READ | win32evtlog.EVENTLOG_SEQUENTIAL_READ
         total = 0
         start_time = datetime.datetime.strptime(start_time, "%Y-%m-%d %H:%M:%S")
-        last_occurred_time = None
 
         try:
             while True:
@@ -153,21 +176,26 @@ class Patvs_Fuction():
                     break  # If no more events, break the loop
                 for event in events:
                     if event.EventID == 1:
-                        occurred_time_str = str(event.TimeGenerated)
-                        try:
-                            occurred_time = datetime.datetime.strptime(occurred_time_str, "%Y/%m/%d %H:%M:%S")
-                        except ValueError:
-                            occurred_time = datetime.datetime.strptime(occurred_time_str, "%Y-%m-%d %H:%M:%S")
+                        event_data = self.get_event_data(event)
 
-                        # Only count unique S4 events based on time
-                        if occurred_time > start_time and (
-                                last_occurred_time is None or occurred_time > last_occurred_time):
-                            total += 1
-                            last_occurred_time = occurred_time
-                            logger.info(f'{event.EventID}')
-                            logger.info(occurred_time)
-                            if total >= target_cycles:
-                                break
+                        # 解析 EventData 获取 SleepTime 和 WakeTime
+                        sleep_time = None
+                        wake_time = None
+                        for line in event_data.split('\n'):
+                            if "睡眠时间" in line:
+                                sleep_time = self.parse_time(line.split(": ")[1])
+                            elif "唤醒时间" in line:
+                                wake_time = self.parse_time(line.split(": ")[1])
+
+                        # 统计S4事件次数
+                        if sleep_time and wake_time:
+                            if sleep_time > start_time and wake_time > sleep_time:
+                                total += 1
+                                logger.info(
+                                    f'EventID: {event.EventID}, SleepTime: {sleep_time}, WakeTime: {wake_time}')
+                                wx.CallAfter(self.window.add_log_message, f'EventID: {event.EventID}, SleepTime: {sleep_time}, WakeTime: {wake_time}')
+                                if total >= target_cycles:
+                                    break
         finally:
             win32evtlog.CloseEventLog(hand)
 

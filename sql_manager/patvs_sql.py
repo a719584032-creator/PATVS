@@ -16,7 +16,8 @@ class Patvs_SQL():
             host="rm-cn-lf63r60vh0003gto.rwlb.rds.aliyuncs.com",
             user="yesq3_lenovo",
             password="patvs_Lenovo",
-            database="lenovoDb"
+            database="lenovoDb",
+            buffered=True
         )
 
     def update_start_time_by_case_id(self, case_id, actions, actions_num):
@@ -28,13 +29,13 @@ class Patvs_SQL():
             # 确保result的查询结果不是None并且 StartTime（result[0]）也位置None
             if result and result[0][0] is not None and result[0][1] is None:
                 logger.info(f"已有执行记录时间 {result},仅修改监控动作和次数")
-                cur.execute("UPDATE TestCase SET Actions = %s, ActionsNum = %s WHERE CaseID = %s",
+                cur.execute("UPDATE TestCase SET Actions = %s, TestNum = %s WHERE CaseID = %s",
                             (actions, actions_num, case_id))
             else:
                 now = datetime.now()
                 formatted_now = now.strftime('%Y-%m-%d %H:%M:%S')
                 logger.info("开始记录执行时间，动作和次数")
-                cur.execute("UPDATE TestCase SET StartTime = %s, Actions = %s, ActionsNum = %s WHERE CaseID = %s",
+                cur.execute("UPDATE TestCase SET StartTime = %s, Actions = %s, TestNum = %s WHERE CaseID = %s",
                             (formatted_now, actions, actions_num, case_id))
         except Exception as e:
             logger.error(f"An error occurred: {e}")
@@ -123,18 +124,14 @@ class Patvs_SQL():
         finally:
             cursor.close()
 
-    def select_case_by_sheet_name(self, sheet_name):
+    def select_case_by_sheet_id(self, sheet_id):
         cur = self.conn.cursor()
         query = """
-        SELECT tc.*
-        FROM TestCase tc
-        JOIN TestSheet ts ON tc.sheet_id = ts.id
-        WHERE ts.sheet_name = %s
+        SELECT * FROM TestCase WHERE sheet_id = %s
         """
-        cur.execute(query, (sheet_name,))
+        cur.execute(query, (sheet_id,))
         all_case = cur.fetchall()
         cur.close()
-        logger.info(f'Cases for sheet_name {sheet_name}: {all_case}')
         return all_case
 
     def select_all_plan_names_by_username(self, username):
@@ -158,7 +155,7 @@ class Patvs_SQL():
     def select_all_sheet_names_by_plan_and_username(self, plan_name, username):
         cur = self.conn.cursor()
         query = """
-        SELECT ts.sheet_name
+        SELECT ts.id, ts.sheet_name
         FROM TestSheet ts
         JOIN TestPlan tp ON ts.plan_id = tp.id
         WHERE tp.plan_name = %s AND ts.tester = %s
@@ -166,10 +163,11 @@ class Patvs_SQL():
         cur.execute(query, (plan_name, username))
         result = cur.fetchall()
         cur.close()
+        logger.warning(2222222222222222222222222222222)
         logger.info(result)
         if result:
             # 返回所有 sheet_name 的列表
-            return [res[0] for res in result]
+            return result
         else:
             return []
 
@@ -256,7 +254,6 @@ class Patvs_SQL():
                     comment = NULL, 
                     StartTime = NULL, 
                     Actions = NULL, 
-                    ActionsNum = NULL, 
                     TestNum = NULL
                 WHERE CaseID = %s
             """, (case_id,))
@@ -268,52 +265,38 @@ class Patvs_SQL():
         finally:
             cur.close()
 
-    def count_case_by_sheet_name(self, sheet_name):
+    def count_case_by_sheet_id(self, sheet_id):
         """
         统计用例总数
-        :param sheet_name: 测试sheet页的名称
+        :param sheet_id: 测试sheet页的名称
         :return: 返回该测试文件中的用例总数
         """
         cur = self.conn.cursor()
         try:
-            cur.execute("SELECT id FROM TestSheet WHERE sheet_name=%s", (sheet_name,))
-            file_id_result = cur.fetchone()
-            if file_id_result:
-                file_id = file_id_result[0]
-                cur.execute("SELECT COUNT(*) FROM TestCase WHERE sheet_id=%s", (file_id,))
-                count_result = cur.fetchone()
-                return count_result[0] if count_result else 0
-            else:
-                logger.error(f"No entries found for sheet_name: {sheet_name}")
-                return 0
+            cur.execute("SELECT COUNT(*) FROM TestCase WHERE sheet_id=%s", (sheet_id,))
+            count_result = cur.fetchone()
+            return count_result[0] if count_result else 0
         except mysql.connector.Error as e:
             logger.error(f"An error occurred: {e.args[0]}")
             return 0
         finally:
             cur.close()
 
-    def count_case_time_by_sheet_name(self, sheet_name):
+    def count_case_time_by_sheet_id(self, sheet_id):
         """
         统计总用例耗时
-        :param sheet_name: 测试文件的名称
+        :param sheet_id: 测试文件的sheet_id
         :return: 返回该测试文件中的总用例耗时
         """
         cur = self.conn.cursor()
         try:
-            cur.execute("SELECT id FROM TestSheet WHERE sheet_name=%s", (sheet_name,))
-            file_id_result = cur.fetchone()
-            if file_id_result:
-                file_id = file_id_result[0]
-                cur.execute("SELECT SUM(TestTime) FROM TestCase WHERE sheet_id=%s", (file_id,))
-                count_result = cur.fetchone()
-                if count_result and count_result[0] is not None:
-                    # 使用math.ceil函数将秒转换为分钟，并向上取整
-                    total_time_in_min = math.ceil(count_result[0] / 60.0)
-                    return str(total_time_in_min) + ' min'
-                else:
-                    return 0
+            cur.execute("SELECT SUM(TestTime) FROM TestCase WHERE sheet_id=%s", (sheet_id,))
+            count_result = cur.fetchone()
+            if count_result and count_result[0] is not None:
+                # 使用math.ceil函数将秒转换为分钟，并向上取整
+                total_time_in_min = math.ceil(count_result[0] / 60.0)
+                return str(total_time_in_min) + ' min'
             else:
-                logger.error(f"No entries found for filename: {sheet_name}")
                 return 0
         except mysql.connector.Error as e:
             logger.error(f"An error occurred: {e.args[0]}")
@@ -321,7 +304,7 @@ class Patvs_SQL():
         finally:
             cur.close()
 
-    def count_executed_case_by_sheet_name(self, sheet_name):
+    def count_executed_case_by_sheet_id(self, sheet_id):
         """
         统计已执行用例数
         :param sheet_name: 测试文件的名称
@@ -329,24 +312,17 @@ class Patvs_SQL():
         """
         cur = self.conn.cursor()
         try:
-            cur.execute("SELECT id FROM TestSheet WHERE sheet_name = %s", (sheet_name,))
-            result = cur.fetchone()
-            if result:
-                file_id = result[0]
-                # 统计已执行的用例数量
-                cur.execute("SELECT COUNT(*) FROM TestCase WHERE sheet_id = %s AND TestResult IS NOT NULL", (file_id,))
-                executed_count = cur.fetchone()[0]
-                return executed_count
-            else:
-                logger.error(f"No test file found with the name: {sheet_name}")
-                return 0
+            # 统计已执行的用例数量
+            cur.execute("SELECT COUNT(*) FROM TestCase WHERE sheet_id = %s AND TestResult IS NOT NULL", (sheet_id,))
+            executed_count = cur.fetchone()
+            return executed_count[0] if executed_count else 0
         except Exception as e:
             logger.error(f"An error occurred: {e}")
             return 0
         finally:
             cur.close()
 
-    def count_pass_rate_by_sheet_name(self, sheet_name):
+    def count_pass_rate_by_sheet_id(self, sheet_id):
         """
         统计通过用例
         :param sheet_name: 测试文件的名称
@@ -354,35 +330,29 @@ class Patvs_SQL():
         """
         cur = self.conn.cursor()
         try:
-            cur.execute("SELECT id FROM TestSheet WHERE sheet_name = %s", (sheet_name,))
-            result = cur.fetchone()
-            if result:
-                file_id = result[0]
-                cur.execute("SELECT COUNT(*) FROM TestCase WHERE sheet_id = %s AND TestResult = 'Pass'", (file_id,))
-                pass_count = cur.fetchone()[0]
-                return pass_count
-            else:
-                logger.error(f"No test file found with the name: {sheet_name}")
-                return 0
+            cur.execute("SELECT COUNT(*) FROM TestCase WHERE sheet_id = %s AND TestResult = 'Pass'", (sheet_id,))
+            pass_count = cur.fetchone()
+            return pass_count[0] if pass_count else 0
         except Exception as e:
             logger.error(f"An error occurred: {e}")
             return 0
         finally:
             cur.close()
 
-    def calculate_progress_and_pass_rate(self, sheet_name):
+    def calculate_progress_and_pass_rate(self, sheet_id):
         """
         计算测试用例的执行进度和通过率
         :return: 返回包含执行进度和通过率的字典
         """
+        logger.info('111111111111111111111111')
         # 项目耗时
-        case_time_count = self.count_case_time_by_sheet_name(sheet_name)
+        case_time_count = self.count_case_time_by_sheet_id(sheet_id)
         # 总用例数
-        case_count = self.count_case_by_sheet_name(sheet_name)
+        case_count = self.count_case_by_sheet_id(sheet_id)
         # 已执行用例数
-        executed_cases_count = self.count_executed_case_by_sheet_name(sheet_name)
+        executed_cases_count = self.count_executed_case_by_sheet_id(sheet_id)
         # 通过用例数
-        pass_count = self.count_pass_rate_by_sheet_name(sheet_name)
+        pass_count = self.count_pass_rate_by_sheet_id(sheet_id)
         # 初始化执行进度和通过率
         execution_progress = "0.00%"
         pass_rate = "0.00%"
@@ -393,6 +363,13 @@ class Patvs_SQL():
             # 计算通过率百分比
             pass_rate = (pass_count / case_count) * 100
             pass_rate = f"{pass_rate:.2f}%"
+        logger.warning({
+            "case_count": case_count,
+            "executed_cases_count": executed_cases_count,
+            "execution_progress": execution_progress,
+            "pass_rate": pass_rate,
+            "case_time_count": case_time_count
+        })
         return {
             "case_count": case_count,
             "executed_cases_count": executed_cases_count,
