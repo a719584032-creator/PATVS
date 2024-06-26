@@ -163,7 +163,6 @@ class Patvs_SQL():
         cur.execute(query, (plan_name, username))
         result = cur.fetchall()
         cur.close()
-        logger.warning(2222222222222222222222222222222)
         logger.info(result)
         if result:
             # 返回所有 sheet_name 的列表
@@ -239,6 +238,16 @@ class Patvs_SQL():
             return result[0]
         else:
             return None
+
+    def select_case_result_by_id(self, case_id):
+        """
+        获取测试结果
+        """
+        cur = self.conn.cursor()
+        cur.execute('SELECT TestResult FROM TestCase WHERE CaseID = %s', (case_id,))
+        result = cur.fetchone()
+        cur.close()
+        return result if result[0] is not None else False
 
     def reset_case_by_case_id(self, case_id):
         """
@@ -438,7 +447,10 @@ class Patvs_SQL():
 if __name__ == '__main__':
     data = Patvs_SQL()
     #  data.add_user('yesq3', '123456')
-    data.validate_user('zhangjq9', '123456')
-    res = data.select_plan_name_by_filename('D:\PATVS\TestPlanWithResult_K510_Keyboard_K510_Audit_test_20240411173441.xlsx')
+    # data.validate_user('zhangjq9', '123456')
+    # res = data.select_plan_name_by_filename('D:\PATVS\TestPlanWithResult_K510_Keyboard_K510_Audit_test_20240411173441.xlsx')
+    # if res:
+    #     print(res)
+    res = data.select_case_result_by_id(2481)
     if res:
         print(res)

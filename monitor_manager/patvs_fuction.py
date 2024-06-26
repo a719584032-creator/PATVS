@@ -79,14 +79,15 @@ class Patvs_Fuction():
 
     def count_s3_sleep_events(self, start_time):
         hand = win32evtlog.OpenEventLog(None, "System")
-        # 从新到旧读取
         flags = win32evtlog.EVENTLOG_BACKWARDS_READ | win32evtlog.EVENTLOG_SEQUENTIAL_READ
         total = 0
         start_time = datetime.datetime.strptime(start_time, "%Y-%m-%d %H:%M:%S")
+
         try:
-            # Read the events
-            events = win32evtlog.ReadEventLog(hand, flags, 0)
-            while self.stop_event and events:
+            while True:
+                events = win32evtlog.ReadEventLog(hand, flags, 0)
+                if not events:
+                    break  # If no more events, break the loop
                 for event in events:
                     if event.EventID == 507 or event.EventID == 107:
                         occurred_time_str = str(event.TimeGenerated)
@@ -96,12 +97,9 @@ class Patvs_Fuction():
                             occurred_time = datetime.datetime.strptime(occurred_time_str, "%Y-%m-%d %H:%M:%S")
                         if occurred_time > start_time:
                             total += 1
-                            message = (f"S3 cycle completed: {total} times")
-                            wx.CallAfter(self.window.add_log_message, message)
-                events = win32evtlog.ReadEventLog(hand, flags, 0)
         finally:
             win32evtlog.CloseEventLog(hand)
-        return total
+            return total
 
     def test_count_s3_sleep_events(self, start_time, target_cycles):
         hand = win32evtlog.OpenEventLog(None, "System")
@@ -314,31 +312,27 @@ class Patvs_Fuction():
         monitor_locks(target_cycles, self.window)
         wx.CallAfter(self.window.after_test)
 
-    def s3_and_device_plug_changes(self, target_cycles):
-        # 设定开始时间为当前时间
-        start_time = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        logger.info(f"Monitoring started at {start_time}")
-
-        device_unplug_cycles = 0
-        s3_sleep_events = 0
-
-        while device_unplug_cycles < target_cycles or s3_sleep_events < target_cycles:
-            if device_unplug_cycles < target_cycles:
-                device_unplug_cycles = self.monitor_device_plug_changes(target_cycles - device_unplug_cycles)
-
-            if s3_sleep_events < target_cycles:
-                s3_sleep_events = self.count_s3_sleep_events(start_time=start_time)
-
-            # 两个都达到目标次数后退出循环
-            if device_unplug_cycles >= target_cycles and s3_sleep_events >= target_cycles:
-                break
-            elif not self.stop_event:
-                break
-            time.sleep(1)
-        message = (
-            f"Reached target cycles. Plug/unplug cycles: {device_unplug_cycles}, S3 sleep events: {s3_sleep_events}")
-        wx.CallAfter(self.window.add_log_message, message)
-        wx.CallAfter(self.window.after_test)
+    # def s3_and_device_plug_changes(self, target_cycles):
+    #     """
+    #     S3机制: 当计算机从睡眠状态唤醒时，操作系统会尝试重新初始化所有设备，包括 USB 设备。 所以进入S3唤醒会自动被插拔一次
+    #     """
+    #     # 设定开始时间为当前时间
+    #     start_time = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    #     logger.info(f"Monitoring started at {start_time}")
+    #     s3_sleep_events = 0
+    #     notification = Notification(0, target_cycles, self.window)
+    #     notification.messageLoop()
+    #     while s3_sleep_events < target_cycles:
+    #         s3_sleep_events = self.count_s3_sleep_events(start_time=start_time)
+    #         if s3_sleep_events >= target_cycles:
+    #             break
+    #         elif not self.stop_event:
+    #             break
+    #         time.sleep(1)
+    #     message = (
+    #         f"Reached target cycles. Plug/unplug cycles: {target_cycles}, S3 sleep events: {s3_sleep_events}")
+    #     wx.CallAfter(self.window.add_log_message, message)
+    #     wx.CallAfter(self.window.after_test)
 
     def monitor_keystrokes(self, target_cycles):
         key_count = 0

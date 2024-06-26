@@ -21,8 +21,14 @@
 │   ├── lock_csreen  # 锁屏监控
 │   │
 │   └── patvs_fuction # S3,S4,S5,RESTART监控
-│ 
-├── sql_manager  # sql管理，数据存储
+│
+├──web_server 
+│   │   
+│   ├── app.py  # 应用主程序  
+│   │
+│   ├── sql_manager  # sql管理，数据存储
+│   │
+│   └── api_manager # API
 │     
 ├── ui_manager  # UI界面模块
 │

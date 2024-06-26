@@ -117,7 +117,7 @@ class TestCasesPanel(wx.Panel):
         # 下拉框 监控动作、测试次数
         # self.monitor_actions = ['时间', '电源插拔', 'S3+电源插拔', 'S3', 'S4', 'S5', 'Restart',
         #                         '键盘按键', 'USB插拔', 'S3+USB插拔', '锁屏', '鼠标点击']
-        self.monitor_actions = ['时间', '电源插拔', 'S3', 'S4', 'S5', 'Restart',
+        self.monitor_actions = ['时间', '电源插拔', 'S3+电源插拔', 'S3', 'S4', 'S5', 'Restart',
                                 '键盘按键', 'USB插拔', '锁屏', '鼠标点击']
         self.tests_num = ['1', '3', '5', '10', '20', '50', '100', '300', '500', '1000']
         self.time_choice_box = wx.ComboBox(self, choices=['1分钟', '5分钟', '10分钟', '30分钟', '1小时'])
@@ -443,6 +443,9 @@ class TestCasesPanel(wx.Panel):
         num_test = self.tests_box.GetValue()
         if not action or not num_test:
             wx.MessageBox('监控动作/测试次数不能为空', 'Warning')
+            return
+        if self.sql.select_case_result_by_id(self.CaseID):
+            wx.MessageBox('已有测试结果，请重置此条测试用例后再进行测试', 'Warning')
             return
         wx.CallAfter(self.case_disable)
         self.sql.update_start_time_by_case_id(self.CaseID, action, num_test)

@@ -21,7 +21,7 @@ def resource_path(relative_path):
 
 class LoginDialog(wx.Dialog):
     def __init__(self, parent, title):
-        super(LoginDialog, self).__init__(parent, title=title, size=(1000, 700 ))
+        super(LoginDialog, self).__init__(parent, title=title, size=(1000, 700))
         self.sql = Patvs_SQL()  # 连接到数据库
         self.panel = wx.Panel(self)
         self.sizer = wx.BoxSizer(wx.VERTICAL)
