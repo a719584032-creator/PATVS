@@ -62,21 +62,19 @@ class Notification:
         )
 
     def onDeviceChange(self, hwnd, message, wparam, lparam):
-        logger.info(f"Current cycle count: {self.cycles_count}, Target cycle count: {self.target_cycles}")
         dbch = win32gui_struct.UnpackDEV_BROADCAST(lparam)
         if wparam == win32con.DBT_DEVICEREMOVECOMPLETE:
-            logger.info(f"Device {dbch.name} removed at {datetime.now()}")
             self.cycles_count += 1
             message = f"Device {dbch.name} removed, current count: {self.cycles_count}"
+            logger.info(message)
             wx.CallAfter(self.window.add_log_message, message)
         elif wparam == win32con.DBT_DEVICEARRIVAL:
-            logger.info(f"Device {dbch.name} arrived at {datetime.now()}")
             message = f"Device {dbch.name} arrived, current count: {self.cycles_count}"
+            logger.info(message)
             wx.CallAfter(self.window.add_log_message, message)
-
-        logger.info(f"Current cycle count: {self.cycles_count}, Target cycle count: {self.target_cycles}")
         if self.cycles_count >= self.target_cycles:
             message = f"Device plug/unplug cycle completed: {self.cycles_count} times"
+            logger.info(message)
             wx.CallAfter(self.window.add_log_message, message)
             win32gui.PostQuitMessage(0)
 

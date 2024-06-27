@@ -1,7 +1,8 @@
 from openpyxl import load_workbook
 from openpyxl import Workbook
 from common.rw_excel import MyExcel
-
+import mysql.connector
+from mysql.connector import errorcode
 
 # 检查合并单元格是否符合特定规则
 def is_merged_within_range(merged_ranges, row, start_col, end_col):
@@ -32,6 +33,7 @@ def get_all_test(file_name, sheet_name):
         'expected': None
     }
     all_case = []
+    current_title = None
     # 遍历工作表中的所有行
     for row in range(20, sheet.max_row + 1):
 
@@ -40,7 +42,7 @@ def get_all_test(file_name, sheet_name):
             title_cell = sheet.cell(row, 1)
             print("-" * 40)
             print(f"用例标题: {title_cell.value}")
-            case['title'] = title_cell.value
+            current_title = title_cell.value
             continue  # 跳过后续步骤，继续下一行
 
         # 检查是否是步骤：A-D列合并
@@ -55,17 +57,21 @@ def get_all_test(file_name, sheet_name):
             case['expected'] = expected_cell.value
             print("-" * 40)  # 打印分隔线，表示步骤和预期结果的结束
             # 过滤掉都为 None 的数据，添加后重置字典
-            if any(case.values()):
-                filled_case = {k: v if v is not None and v != '' else 'NA' for k, v in case.items()}
-                print('************************************************')
-                print(filled_case['expected'])
-                print('************************************************')
-                all_case.append(filled_case)
-                case = {
-                    'title': None,
-                    'steps': None,
-                    'expected': None
-                }
+        if any(case.values()):
+            case = {
+                'title': current_title if current_title is not None else 'NA',
+                'steps': case['steps'] if case['steps'] is not None else 'NA',
+                'expected': case['expected'] if case['expected'] is not None else 'NA'
+            }
+            print('************************************************')
+            print(case['expected'])
+            print('************************************************')
+            all_case.append(case)
+            case = {
+                'title': None,
+                'steps': None,
+                'expected': None
+            }
     return model_name, all_case
 
 
@@ -92,27 +98,118 @@ def save_cases_to_excel(cases, filename, tester, model_name=None):
     # 保存工作簿
     wb.save(filename + '.xlsx')
 
+def insert_data_to_db(plan_name, project_name, sheet_name, tester, workloading, filename, cases, model_name):
+    try:
+        # 连接到数据库
+        connection = mysql.connector.connect(
+            host="rm-cn-lf63r60vh0003gto.rwlb.rds.aliyuncs.com",
+            user="yesq3_lenovo",
+            password="patvs_Lenovo",
+            database="lenovoDb"
+        )
+        cursor = connection.cursor()
+
+        # 查询是否已经存在相同的 plan_name
+        cursor.execute("SELECT id FROM TestPlan WHERE plan_name = %s", (plan_name,))
+        result = cursor.fetchone()
+
+        if result:
+            # 已经存在相同的 plan_name，获取其 id
+            plan_id = result[0]
+        else:
+            # 插入新的 TestPlan 记录
+            plan_query = """
+                INSERT INTO TestPlan (plan_name, filename)
+                VALUES (%s, %s)
+            """
+            cursor.execute(plan_query, (plan_name, filename))
+            plan_id = cursor.lastrowid
+
+        # 检查是否已经存在相同的 sheet_name
+        cursor.execute("SELECT id FROM TestSheet WHERE sheet_name = %s AND plan_id = %s", (sheet_name, plan_id))
+        sheet_result = cursor.fetchone()
+
+        if sheet_result:
+            print(f"Sheet '{sheet_name}' already exists for plan '{plan_name}', skipping insertion of sheet and cases.")
+            return  # 如果 sheet_name 已经存在，直接跳过后续操作
+        else:
+            # 插入新的 TestSheet 记录
+            sheet_query = """
+                INSERT INTO TestSheet (sheet_name, project_name, tester, workloading, plan_id)
+                VALUES (%s, %s, %s, %s, %s)
+            """
+            cursor.execute(sheet_query, (sheet_name, project_name, tester, workloading, plan_id))
+            sheet_id = cursor.lastrowid
+
+            # 插入到 TestCase 表
+            case_query = """
+                INSERT INTO TestCase (ModelName, CaseTitle, CaseSteps, ExpectedResult, sheet_id)
+                VALUES (%s, %s, %s, %s, %s)
+            """
+            for case in cases:
+                for model in model_name:
+                    cursor.execute(case_query, (model, case['title'], case['steps'], case['expected'], sheet_id))
+
+        # 提交事务
+        connection.commit()
+    except mysql.connector.Error as err:
+        print(f"Error: {err}")
+        connection.rollback()
+    finally:
+        cursor.close()
+        connection.close()
+def validate_excel_format(file_name):
+    """
+    校验 Excel 文件格式
+    """
+    workbook = load_workbook(file_name)
+    required_sheets = ['Plan Information', 'Case List']
+
+    for sheet_name in required_sheets:
+        if sheet_name not in workbook.sheetnames:
+            raise ValueError(f"缺少必要的 sheet 页: {sheet_name}")
+
+    plan_info_sheet = workbook['Plan Information']
+    case_list_sheet = workbook['Case List']
+
+    if plan_info_sheet.cell(1, 1).value != 'Plan name':
+        raise ValueError("Plan Information sheet 页中 A1 单元格的值必须为 'Plan name'")
+
+    if case_list_sheet.cell(2, 2).value != 'Case name':
+        raise ValueError("Case List sheet 页中 B2 单元格的值必须为 'Case name'")
+
+    print("文件格式校验通过")
 
 def run_main(file_name):
+#    validate_excel_format(file_name)
     data = MyExcel(file_name)
+    data.active_sheet('Plan Information')
+    plan_name = data.get_value_by_rc(1, 2)
+    print(plan_name)
+    project_name = data.get_value_by_rc(1, 4)
+    print(project_name)
     data.active_sheet('Case List')
     all_sheet = data.getColValues(2)[2:]
-    # 遍历all_sheet列表，给每个值加上递增的前缀
+    # 实际 sheet_name 需要加上递增的前缀
     all_sheet_with_prefix = [f'{i + 1}-{val}' for i, val in enumerate(all_sheet)]
     all_tester = data.getColValues(14)[2:]
+    all_workloading = data.getColValues(15)[2:]
     print(all_sheet_with_prefix)
     print(all_tester)
-    sheet_and_tester = list(zip(all_sheet_with_prefix, all_tester))
-    print(sheet_and_tester)
-    # sheet_name = '2-KB test  basic function'
-    for i in sheet_and_tester:
+    sheet_and_tester_and_workloading = list(zip(all_sheet_with_prefix, all_tester, all_workloading))
+    print(sheet_and_tester_and_workloading)
+    for i in sheet_and_tester_and_workloading:
         model_name, all_case = get_all_test(file_name, i[0])
         save_cases_to_excel(all_case, i[0], i[1], model_name)
+       # insert_data_to_db(plan_name, project_name, i[0], i[1], i[2], file_name, all_case, model_name)
+
 
 
 if __name__ == '__main__':
     file_name = 'TestPlanWithResult_M410_Mouse_PATVS软件测试(1)_20240528100806.xlsx'
     run_main(file_name)
+
+
     # data = MyExcel(file_name)
     # data.active_sheet('Case List')
     # sheet_name = '2-KB test  basic function'
