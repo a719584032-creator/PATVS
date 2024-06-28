@@ -457,12 +457,12 @@ class TestCasesPanel(wx.Panel):
                 dlg = wx.TextEntryDialog(self, '请输入需要测试的时间(in minutes):', '监控时间', '1')
                 if dlg.ShowModal() == wx.ID_OK:
                     try:
-                        num_time = int(dlg.GetValue())
+                        num_time = float(dlg.GetValue())
                         if num_time > 0:
                             num_time = num_time * 60  # 转换为秒
                             break
                         else:
-                            wx.MessageBox('请输入一个正整数。', '输入错误', wx.OK | wx.ICON_ERROR)
+                            wx.MessageBox('请输入一个正数。', '输入错误', wx.OK | wx.ICON_ERROR)
                     except ValueError:
                         wx.MessageBox('请输入一个有效的正整数。', '输入错误', wx.OK | wx.ICON_ERROR)
                 else:
@@ -518,14 +518,14 @@ class TestCasesPanel(wx.Panel):
             # 获取线程ID
             self.msg_loop_thread_id = msg_loop_thread.ident
 
-        elif action == 'S3+USB插拔':
-            self.add_log_message(f"您选择的动作是: {action}，目标测试次数: {num_test}")
-            msg_loop_thread = threading.Thread(target=self.patvs_monitor.s3_and_device_plug_changes,
-                                               args=(int(num_test),))
-            msg_loop_thread.setDaemon(True)
-            msg_loop_thread.start()
-            # 获取线程ID
-            self.msg_loop_thread_id = msg_loop_thread.ident
+        # elif action == 'S3+USB插拔':
+        #     self.add_log_message(f"您选择的动作是: {action}，目标测试次数: {num_test}")
+        #     msg_loop_thread = threading.Thread(target=self.patvs_monitor.s3_and_device_plug_changes,
+        #                                        args=(int(num_test),))
+        #     msg_loop_thread.setDaemon(True)
+        #     msg_loop_thread.start()
+        #     # 获取线程ID
+        #     self.msg_loop_thread_id = msg_loop_thread.ident
         elif action == '键盘按键':
             self.add_log_message(f"您选择的动作是: {action}，目标测试次数: {num_test}")
             msg_loop_thread = threading.Thread(target=self.patvs_monitor.monitor_keystrokes,
