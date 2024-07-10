@@ -165,7 +165,7 @@ class Patvs_SQL():
         cur.close()
         logger.info(result)
         if result:
-            # 返回所有 sheet_name 的列表
+            # 返回id和sheet_names
             return result
         else:
             return []

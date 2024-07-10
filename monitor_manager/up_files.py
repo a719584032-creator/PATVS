@@ -2,7 +2,7 @@ from openpyxl import load_workbook
 from openpyxl import Workbook
 from common.rw_excel import MyExcel
 from common.logs import logger
-from sql_manager.patvs_sql import Patvs_SQL
+from requests_manager.patvs_sql import Patvs_SQL
 import os
 
 # 检查合并单元格是否符合特定规则

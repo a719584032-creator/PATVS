@@ -4,6 +4,7 @@ import os
 import json
 
 import pywintypes
+import requests
 import win32process
 import wx
 import wx.grid
@@ -15,7 +16,6 @@ from functools import partial
 from monitor_manager.patvs_fuction import Patvs_Fuction
 from openpyxl.styles import PatternFill
 from openpyxl.styles import Font
-from sql_manager.patvs_sql import Patvs_SQL
 from monitor_manager.up_files import run_main
 from monitor_manager.devicerm import Notification
 from common.rw_excel import MyExcel
@@ -23,7 +23,10 @@ from datetime import datetime
 from common.logs import logger
 import win32con
 import win32api
+from requests_manager.http_requests_manager import http_manager
 import win32gui
+
+BASE_URL = 'http://127.0.0.1'
 
 
 def resource_path(relative_path):
@@ -50,7 +53,6 @@ class ResetButtonRenderer(wx.grid.GridCellRenderer):
 class TestCasesPanel(wx.Panel):
     def __init__(self, parent, username):
         super().__init__(parent)
-        self.sql = Patvs_SQL()  # 连接到数据库
         # 在主线程中创建一个事件,用来通知阻塞情况下终止线程
         self.stop_event = True
         self.patvs_monitor = Patvs_Fuction(self, self.stop_event)
@@ -103,7 +105,7 @@ class TestCasesPanel(wx.Panel):
         self.annex_button.Bind(wx.EVT_BUTTON, self.select_annex)
 
         # 用例筛选下拉框
-        self.plan_name_combo = wx.ComboBox(self, choices=self.sql.select_all_plan_names_by_username(username))
+        self.plan_name_combo = wx.ComboBox(self, choices=http_manager.get_plan_names(self.username))
         self.plan_name_combo.Bind(wx.EVT_COMBOBOX, self.on_plan_select)
 
         # 添加新的下拉框用于显示 sheet_name
@@ -251,7 +253,7 @@ class TestCasesPanel(wx.Panel):
         # 选择测试计划后，更新用例表下拉框
         logger.warning('开始调用 plan select')
         plan_name = self.plan_name_combo.GetValue()
-        sheet_names_with_ids = self.sql.select_all_sheet_names_by_plan_and_username(plan_name, self.username)
+        sheet_names_with_ids = http_manager.get_sheet_names(plan_name, self.username)
 
         # 清空并重新填充 sheet_name_combo
         self.sheet_name_combo.Clear()
@@ -287,7 +289,8 @@ class TestCasesPanel(wx.Panel):
     def update_statistics(self):
         # 更新统计信息
         if self.sheet_id:
-            result = self.sql.calculate_progress_and_pass_rate(self.sheet_id)
+            data = http_manager.get_params(f'/calculate_progress_and_pass_rate/{self.sheet_id}')
+            result = data.get('result')
             self.case_time_total.SetLabel(f"总耗时: {result['case_time_count']}")
             self.case_total.SetLabel(f"用例总数: {result['case_count']}")
             self.executed_cases.SetLabel(f"已执行用例: {result['executed_cases_count']}")
@@ -338,8 +341,7 @@ class TestCasesPanel(wx.Panel):
                     if 'test_sheet' in state and state['test_sheet']:
                         sheet_name = state['test_sheet']
                         sheet_id = state.get('sheet_id', None)
-                        sheet_names_with_ids = self.sql.select_all_sheet_names_by_plan_and_username(state['test_plan'],
-                                                                                                    self.username)
+                        sheet_names_with_ids = http_manager.get_sheet_names(state['test_plan'], self.username)
 
                         # 清空并重新填充 sheet_name_combo
                         self.sheet_name_combo.Clear()
@@ -403,7 +405,7 @@ class TestCasesPanel(wx.Panel):
         if clicked_button is self.result_buttons['Pass']:
             # 处理 pass
             logger.info(f"Pass Button clicked {self.CaseID}")
-            self.sql.update_end_time_case_id(self.CaseID, 'Pass')
+            http_manager.update_end_time_case_id(self.CaseID, 'Pass')
             wx.CallAfter(self.case_enable)
             wx.CallAfter(self.refresh_node_case_status, case_status=case_result)
             wx.CallAfter(self.update_statistics)
@@ -415,7 +417,7 @@ class TestCasesPanel(wx.Panel):
                 input_content = dlg.GetValue().strip()  # 获取输入的内容
                 if input_content:
                     logger.info(f"{case_result} Button clicked, Content: {input_content}")
-                    self.sql.update_end_time_case_id(self.CaseID, case_result, input_content)
+                    http_manager.update_end_time_case_id(self.CaseID, case_result, input_content)
                     wx.CallAfter(self.case_enable)
                     wx.CallAfter(self.refresh_node_case_status, case_status=case_result)
                     wx.CallAfter(self.update_statistics)
@@ -444,11 +446,12 @@ class TestCasesPanel(wx.Panel):
         if not action or not num_test:
             wx.MessageBox('监控动作/测试次数不能为空', 'Warning')
             return
-        if self.sql.select_case_result_by_id(self.CaseID):
+        result = http_manager.get_params(f'/get_case_result/{self.CaseID}')
+        if result.get('case_result'):
             wx.MessageBox('已有测试结果，请重置此条测试用例后再进行测试', 'Warning')
             return
         wx.CallAfter(self.case_disable)
-        self.sql.update_start_time_by_case_id(self.CaseID, action, num_test)
+        http_manager.post_data('/update_start_time', {'case_id': self.CaseID, 'actions': action, 'actions_num': num_test})
         # 初始化终止信号
         self.patvs_monitor.stop_event = True
         # 使用多线程异步运行，防止GUI界面卡死
@@ -483,28 +486,28 @@ class TestCasesPanel(wx.Panel):
             thread.start()
         elif action == 'S3':
             self.add_log_message(f"您选择的动作是: {action}，目标测试次数: {num_test}")
-            start_time = self.sql.select_start_time(self.CaseID)
+            start_time = http_manager.get_start_time(self.CaseID)
             thread = threading.Thread(target=self.patvs_monitor.test_count_s3_sleep_events,
                                       args=(str(start_time), int(num_test),))
             thread.setDaemon(True)
             thread.start()
         elif action == 'S4':
             self.add_log_message(f"您选择的动作是: {action}，目标测试次数: {num_test}")
-            start_time = self.sql.select_start_time(self.CaseID)
+            start_time = http_manager.get_start_time(self.CaseID)
             thread = threading.Thread(target=self.patvs_monitor.test_count_s4_sleep_events,
                                       args=(str(start_time), int(num_test),))
             thread.setDaemon(True)
             thread.start()
         elif action == 'S5':
             self.add_log_message(f"您选择的动作是: {action}，目标测试次数: {num_test}")
-            start_time = self.sql.select_start_time(self.CaseID)
+            start_time = http_manager.get_start_time(self.CaseID)
             thread = threading.Thread(target=self.patvs_monitor.test_count_s5_sleep_events,
                                       args=(str(start_time), int(num_test),))
             thread.setDaemon(True)
             thread.start()
         elif action == 'Restart':
             self.add_log_message(f"您选择的动作是: {action}，目标测试次数: {num_test}")
-            start_time = self.sql.select_start_time(self.CaseID)
+            start_time = http_manager.get_start_time(self.CaseID)
             thread = threading.Thread(target=self.patvs_monitor.test_count_restart_events,
                                       args=(str(start_time), int(num_test),))
             thread.setDaemon(True)
@@ -618,8 +621,10 @@ class TestCasesPanel(wx.Panel):
             pathname = fileDialog.GetPath()
             filename = os.path.basename(pathname)  # 获取文件名
             # 校验文件是否已存在
-            result = self.sql.select_filename_by_filename(filename)
-            if result:
+     #       result = self.sql.select_filename_by_filename(filename)
+            result = http_manager.get_params(f'/get_filename/{filename}')
+            logger.warning('file_exists:', result.get('file_exists'))
+            if result.get('file_exists'):
                 wx.MessageBox(f"当前文件已存在，请勿重复上传", "提示", wx.OK | wx.ICON_WARNING)
                 return
 
@@ -642,16 +647,18 @@ class TestCasesPanel(wx.Panel):
                     wx.CallAfter(lambda: wait_dialog.__exit__(None, None, None))
 
                 # 更新显示
-                all_plans = self.sql.select_all_plan_names_by_username(self.username)
+                all_plans = http_manager.get_plan_names(self.username)
                 self.tree.DeleteAllItems()  # 清空现有的树状结构
                 self.plan_name_combo.Clear()
                 self.sheet_name_combo.Clear()  # 先清除之前的选项
                 self.plan_name_combo.AppendItems(all_plans)  # 添加新的选项
-                plan_name = self.sql.select_plan_name_by_filename(filename)
-                if plan_name:
-                    self.plan_name_combo.SetValue(plan_name)
-                    self.on_plan_select(None)  # 自动加载 test_sheet
+                # plan_name = self.sql.select_plan_name_by_filename(filename)
+                # if plan_name:
+                #     self.plan_name_combo.SetValue(plan_name)
+                #     self.on_plan_select(None)  # 自动加载 test_sheet
 
+                self.plan_name_combo.SetValue(all_plans[0])
+                self.on_plan_select(None)  # 自动加载 test_sheet
             wx.CallAfter(complete_upload)
 
             # self.sheet_name_combo.SetValue(self.sheet_name)
@@ -728,7 +735,7 @@ class TestCasesPanel(wx.Panel):
 
         # 创建grid并设置行和列
         self.grid = wx.grid.Grid(dialog)
-        all_case = self.sql.select_case_by_sheet_id(self.sheet_id)
+        all_case = http_manager.get_cases_by_sheet_id(self.sheet_id)
         self.grid.CreateGrid(numRows=len(all_case), numCols=len(all_case[0]) - 2)
 
         # 设置列标题
@@ -779,7 +786,8 @@ class TestCasesPanel(wx.Panel):
         # 清除原有数据
         grid.ClearGrid()
         # 获取新的数据
-        all_case = self.sql.select_cases_by_case_id(self.CaseID)
+        data = http_manager.get_params(f'/get_cases_by_case_id/{self.CaseID}')
+        all_case = data.get('cases')
         for i, case in enumerate(all_case):
             for j, item in enumerate(case[:-2]):  # 排除用例ID
                 grid.SetCellValue(i, j + 1, str(item))  # self.grid.InsertCols(0) 所以要j+1
@@ -795,7 +803,7 @@ class TestCasesPanel(wx.Panel):
             reset_response = reset_msg.ShowModal()
             if reset_response == wx.ID_YES:
                 logger.info(f"重置ID: {case_id} 的用例测试状态")
-                self.sql.reset_case_by_case_id(case_id)
+                http_manager.post_data('/reset_case_result', {'case_id': case_id})
                 evt.Skip(False)
                 self.reset_grid(self.grid)  # 刷新网格布局
                 wx.CallAfter(self.refresh_node_case_status, case_id=case_id)
@@ -867,7 +875,7 @@ class TestCasesPanel(wx.Panel):
         logger.warning(sheet_name)
         logger.warning(222222222222222222222222)
         self.tree.DeleteAllItems()  # 清空现有的树状结构
-        all_case = self.sql.select_case_by_sheet_id(sheet_id)
+        all_case = http_manager.get_cases_by_sheet_id(sheet_id)
         self.update_statistics()
         # 定义用于表示状态的图标
         icons = {

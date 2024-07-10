@@ -7,10 +7,12 @@ from common.logs import logger
 import sys
 import os
 import win32api
-from sql_manager.patvs_sql import Patvs_SQL
+from requests_manager.patvs_sql import Patvs_SQL
+from requests_manager.http_requests_manager import http_manager
 import json
 import hashlib
 import base64
+import requests
 
 
 def resource_path(relative_path):
@@ -22,7 +24,6 @@ def resource_path(relative_path):
 class LoginDialog(wx.Dialog):
     def __init__(self, parent, title):
         super(LoginDialog, self).__init__(parent, title=title, size=(1000, 700))
-        self.sql = Patvs_SQL()  # 连接到数据库
         self.panel = wx.Panel(self)
         self.sizer = wx.BoxSizer(wx.VERTICAL)
 
@@ -86,7 +87,11 @@ class LoginDialog(wx.Dialog):
         password = self.password_text.GetValue()
 
         # 校验用户凭证
-        valid, role = self.sql.validate_user(username, password)
+        pamars = {'username': username, 'password': password}
+        data = http_manager.get_params(f'/validate_user', params=pamars)
+        valid = data.get('valid', False)
+        role = data.get('role', None)
+
         if valid:
             if self.remember_me_checkbox.GetValue():
                 self.save_credentials(username, password)
@@ -108,7 +113,6 @@ class LoginDialog(wx.Dialog):
 class ChangePasswordDialog(wx.Dialog):
     def __init__(self, parent):
         super(ChangePasswordDialog, self).__init__(parent, title="Change Password", size=(1000, 700))
-        self.sql = Patvs_SQL()  # 连接到数据库
         self.panel = wx.Panel(self)
         self.sizer = wx.BoxSizer(wx.VERTICAL)
 
@@ -149,8 +153,14 @@ class ChangePasswordDialog(wx.Dialog):
         if new_password != confirm_password:
             wx.MessageBox("New passwords do not match", "Error", wx.OK | wx.ICON_ERROR)
             return
-
-        if self.sql.change_user_password(username, old_password, new_password):
+        json_data = {
+            'username': username,
+            'old_password': old_password,
+            'new_password': new_password
+        }
+        data = http_manager.post_data(f'/change_user_password', json_data)
+        logger.warning(data.get('result'))
+        if data.get('result'):
             wx.MessageBox("Password changed successfully", "Success", wx.OK | wx.ICON_INFORMATION)
             self.EndModal(wx.ID_OK)
         else:

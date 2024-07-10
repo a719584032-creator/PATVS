@@ -1,0 +1,437 @@
+from flask import Flask, request, jsonify
+from common.logs import logger
+from mysql.connector.pooling import MySQLConnectionPool
+from patvsweb_services.sql_manager import TestCaseManager
+import os
+
+app = Flask(__name__)
+# 数据库配置
+# DB_CONFIG = {
+#     'host': os.getenv('DB_HOST'),
+#     'user': os.getenv('DB_USER'),
+#     'password': os.getenv('DB_PASSWORD'),
+#     'database': os.getenv('DB_DATABASE'),
+#     'buffered': True
+# }
+
+DB_CONFIG = {
+    'host': 'rm-cn-lf63r60vh0003gto.rwlb.rds.aliyuncs.com',
+    'user': 'yesq3_lenovo',
+    'password': 'patvs_Lenovo',
+    'database': 'lenovoDb',
+    'buffered': True
+}
+
+db_pool = MySQLConnectionPool(pool_name="mypool", pool_size=10, **DB_CONFIG)
+
+
+def get_db_connection():
+    return db_pool.get_connection()
+
+
+@app.route('/update_start_time', methods=['POST'])
+def update_start_time():
+    data = request.json
+    case_id = data.get('case_id')
+    actions = data.get('actions')
+    actions_num = data.get('actions_num')
+    logger.info(f"Updating start time for case_id: {case_id}, actions: {actions}, actions_num: {actions_num}")
+    if not case_id or not actions or not actions_num:
+        return jsonify({'error': 'Missing required parameters'}), 400
+
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    try:
+        manager = TestCaseManager(conn, cursor)
+        manager.update_start_time_by_case_id(case_id, actions, actions_num)
+        conn.commit()
+        return jsonify({'message': 'Start time updated successfully.'}), 200
+    except Exception as e:
+        conn.rollback()
+        logger.error(f"An error occurred: {e}")
+        return jsonify({'error': str(e)}), 500
+    finally:
+        cursor.close()
+        conn.close()
+
+
+@app.route('/update_end_time', methods=['POST'])
+def update_end_time():
+    data = request.json
+    case_id = data.get('case_id')
+    case_result = data.get('case_result')
+    comment = data.get('comment', None)
+    logger.info(f"Updating start time for case_id: {case_id}, actions: {case_result}, comment: {comment}")
+    if not case_id or not case_result:
+        return jsonify({'error': 'Missing required parameters'}), 400
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    try:
+        manager = TestCaseManager(conn, cursor)
+        manager.update_end_time_case_id(case_id, case_result, comment)
+        conn.commit()
+        return jsonify({'message': 'End time updated successfully.'}), 200
+    except Exception as e:
+        conn.rollback()
+        logger.error(f"An error occurred: {e}")
+        return jsonify({'error': str(e)}), 500
+    finally:
+        cursor.close()
+        conn.close()
+
+
+@app.route('/insert_case', methods=['POST'])
+def insert_case():
+    data = request.json
+    plan_name = data.get('plan_name')
+    project_name = data.get('project_name')
+    sheet_name = data.get('sheet_name')
+    tester = data.get('tester')
+    workloading = data.get('workloading')
+    filename = data.get('filename')
+    cases = data.get('cases')
+    model_name = data.get('model_name')
+
+    logger.info(f"Inserting case for plan: {plan_name}, project: {project_name}, sheet: {sheet_name}")
+
+    if not plan_name or not project_name or not sheet_name or not tester or not workloading or not filename or not cases or not model_name:
+        return jsonify({'error': 'Missing required parameters'}), 400
+
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    try:
+        manager = TestCaseManager(conn, cursor)
+        manager.insert_case_by_filename(plan_name, project_name, sheet_name, tester, workloading, filename, cases,
+                                        model_name)
+        conn.commit()
+        return jsonify({'message': 'Case inserted successfully.'}), 200
+    except Exception as e:
+        conn.rollback()
+        logger.error(f"An error occurred: {e}")
+        return jsonify({'error': str(e)}), 500
+    finally:
+        cursor.close()
+        conn.close()
+
+
+@app.route('/get_cases/<int:sheet_id>', methods=['GET'])
+def get_cases(sheet_id):
+    logger.info(f"Fetching cases for sheet_id: {sheet_id}")
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    try:
+        manager = TestCaseManager(conn, cursor)
+        cases = manager.select_case_by_sheet_id(sheet_id)
+        return jsonify({'cases': cases}), 200
+    except Exception as e:
+        logger.error(f"An error occurred: {e}")
+        return jsonify({'error': str(e)}), 500
+    finally:
+        cursor.close()
+        conn.close()
+
+
+@app.route('/get_plan_names/<string:username>', methods=['GET'])
+def get_plan_names(username):
+    logger.info(f"Fetching plan names for username: {username}")
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    try:
+        manager = TestCaseManager(conn, cursor)
+        plan_names = manager.select_all_plan_names_by_username(username)
+        return jsonify({'plan_names': plan_names}), 200
+    except Exception as e:
+        logger.error(f"An error occurred: {e}")
+        return jsonify({'error': str(e)}), 500
+    finally:
+        cursor.close()
+        conn.close()
+
+
+@app.route('/get_sheet_names', methods=['GET'])
+def get_sheet_names():
+    username = request.args.get('username')
+    plan_name = request.args.get('plan_name')
+
+    logger.info(f"Fetching sheet names for username: {username} and plan_name: {plan_name}")
+
+    if not username or not plan_name:
+        return jsonify({'error': 'Missing required parameters'}), 400
+
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    try:
+        manager = TestCaseManager(conn, cursor)
+        sheet_names_with_ids = manager.select_all_sheet_names_by_plan_and_username(plan_name, username)
+        return jsonify({'sheet_names_with_ids': sheet_names_with_ids}), 200
+    except Exception as e:
+        logger.error(f"An error occurred: {e}")
+        return jsonify({'error': str(e)}), 500
+    finally:
+        cursor.close()
+        conn.close()
+
+
+@app.route('/get_userid/<string:username>', methods=['GET'])
+def get_userid(username):
+    logger.info(f"Fetching user ID for username: {username}")
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    try:
+        manager = TestCaseManager(conn, cursor)
+        user_id = manager.select_userid_by_username(username)
+        return jsonify({'user_id': user_id}), 200
+    except Exception as e:
+        logger.error(f"An error occurred: {e}")
+        return jsonify({'error': str(e)}), 500
+    finally:
+        cursor.close()
+        conn.close()
+
+
+@app.route('/get_filename/<string:filename>', methods=['GET'])
+def get_filename(filename):
+    logger.info(f"Fetching filename: {filename}")
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    try:
+        manager = TestCaseManager(conn, cursor)
+        file_exists = manager.select_filename_by_filename(filename)
+        return jsonify({'file_exists': file_exists}), 200
+    except Exception as e:
+        logger.error(f"An error occurred: {e}")
+        return jsonify({'error': str(e)}), 500
+    finally:
+        cursor.close()
+        conn.close()
+
+
+@app.route('/get_plan_name/<string:filename>', methods=['GET'])
+def get_plan_name(filename):
+    logger.info(f"Fetching plan name for filename: {filename}")
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    try:
+        manager = TestCaseManager(conn, cursor)
+        plan_name = manager.select_plan_name_by_filename(filename)
+        return jsonify({'plan_name': plan_name}), 200
+    except Exception as e:
+        logger.error(f"An error occurred: {e}")
+        return jsonify({'error': str(e)}), 500
+    finally:
+        cursor.close()
+        conn.close()
+
+
+@app.route('/get_cases_by_case_id/<int:case_id>', methods=['GET'])
+def get_cases_by_case_id(case_id):
+    logger.info(f"Fetching cases for case_id: {case_id}")
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    try:
+        manager = TestCaseManager(conn, cursor)
+        cases = manager.select_cases_by_case_id(case_id)
+        return jsonify({'cases': cases}), 200
+    except Exception as e:
+        logger.error(f"An error occurred: {e}")
+        return jsonify({'error': str(e)}), 500
+    finally:
+        cursor.close()
+        conn.close()
+
+
+@app.route('/update_test_num', methods=['POST'])
+def update_test_num():
+    data = request.json
+    case_id = data.get('case_id')
+    test_num = data.get('test_num')
+
+    logger.info(f"Updating test number for case_id: {case_id}")
+
+    if not case_id or not test_num:
+        return jsonify({'error': 'Missing required parameters'}), 400
+
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    try:
+        manager = TestCaseManager(conn, cursor)
+        manager.update_test_num_by_id(test_num, case_id)
+        conn.commit()
+        return jsonify({'message': 'Test number updated successfully.'}), 200
+    except Exception as e:
+        conn.rollback()
+        logger.error(f"An error occurred: {e}")
+        return jsonify({'error': str(e)}), 500
+    finally:
+        cursor.close()
+        conn.close()
+
+
+@app.route('/get_test_num/<int:case_id>', methods=['GET'])
+def get_test_num(case_id):
+    logger.info(f"Fetching cases for case_id: {case_id}")
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    try:
+        manager = TestCaseManager(conn, cursor)
+        test_num = manager.select_test_num_by_id(case_id)
+        return jsonify({'test_num': test_num}), 200
+    except Exception as e:
+        logger.error(f"An error occurred: {e}")
+        return jsonify({'error': str(e)}), 500
+    finally:
+        cursor.close()
+        conn.close()
+
+
+@app.route('/get_case_result/<int:case_id>', methods=['GET'])
+def get_case_result(case_id):
+    logger.info(f"Fetching cases for case_id: {case_id}")
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    try:
+        manager = TestCaseManager(conn, cursor)
+        case_result = manager.select_case_result_by_id(case_id)
+        return jsonify({'case_result': case_result}), 200
+    except Exception as e:
+        logger.error(f"An error occurred: {e}")
+        return jsonify({'error': str(e)}), 500
+    finally:
+        cursor.close()
+        conn.close()
+
+
+@app.route('/reset_case_result', methods=['POST'])
+def reset_case_result():
+    data = request.json
+    case_id = data.get('case_id')
+    logger.info(f"Fetching cases for case_id: {case_id}")
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    try:
+        manager = TestCaseManager(conn, cursor)
+        manager.reset_case_by_case_id(case_id)
+        conn.commit()
+        return jsonify({'message': 'Test case reset successfully.'}), 200
+    except Exception as e:
+        conn.rollback()
+        logger.error(f"An error occurred: {e}")
+        return jsonify({'error': str(e)}), 500
+    finally:
+        cursor.close()
+        conn.close()
+
+
+@app.route('/calculate_progress_and_pass_rate/<int:sheet_id>', methods=['GET'])
+def calculate_progress_and_pass_rate(sheet_id):
+    logger.info(f"Fetching sheets for sheet_id: {sheet_id}")
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    try:
+        manager = TestCaseManager(conn, cursor)
+        result = manager.calculate_progress_and_pass_rate(sheet_id)
+        return jsonify({'result': result}), 200
+    except Exception as e:
+        logger.error(f"An error occurred: {e}")
+        return jsonify({'error': str(e)}), 500
+    finally:
+        cursor.close()
+        conn.close()
+
+
+@app.route('/get_start_time/<int:case_id>', methods=['GET'])
+def get_start_time(case_id):
+    logger.info(f"Fetching start_time for case_id: {case_id}")
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    try:
+        manager = TestCaseManager(conn, cursor)
+        start_time = manager.select_start_time(case_id)
+        conn.commit()
+        return jsonify({'start_time': start_time}), 200
+    except Exception as e:
+        conn.rollback()
+        logger.error(f"An error occurred: {e}")
+        return jsonify({'error': str(e)}), 500
+    finally:
+        cursor.close()
+        conn.close()
+
+
+@app.route('/add_user', methods=['POST'])
+def add_user():
+    data = request.json
+    username = data.get('username')
+    password = data.get('password')
+    logger.info(f"add uesr by username: {username}, password: {password} ")
+
+    if not username or not password:
+        return jsonify({'error': 'Missing required parameters'}), 400
+
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    try:
+        manager = TestCaseManager(conn, cursor)
+        manager.add_user(username, password)
+        conn.commit()
+        return jsonify({'message': f'add user {username} successfully.'}), 200
+    except Exception as e:
+        conn.rollback()
+        logger.error(f"An error occurred: {e}")
+        return jsonify({'error': str(e)}), 500
+    finally:
+        cursor.close()
+        conn.close()
+
+
+@app.route('/validate_user', methods=['GET'])
+def validate_user():
+    username = request.args.get('username')
+    password = request.args.get('password')
+    logger.info(f"login username: {username}, password: {password} ")
+
+    if not username or not password:
+        return jsonify({'error': 'Missing required parameters'}), 400
+
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    try:
+        manager = TestCaseManager(conn, cursor)
+        valid, role = manager.validate_user(username, password)
+        return jsonify({'valid': valid, 'role': role}), 200
+    except Exception as e:
+        logger.error(f"An error occurred: {e}")
+        return jsonify({'error': str(e)}), 500
+    finally:
+        cursor.close()
+        conn.close()
+
+
+@app.route('/change_user_password', methods=['POST'])
+def change_user_password():
+    data = request.json
+    username = data.get('username')
+    old_password = data.get('old_password')
+    new_password = data.get('new_password')
+    logger.info(
+        f"change_user_password username: {username}, old_password: {old_password} , new_password: {new_password}")
+
+    if not username or not old_password or not new_password:
+        return jsonify({'error': 'Missing required parameters'}), 400
+
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    try:
+        manager = TestCaseManager(conn, cursor)
+        result = manager.change_user_password(username, old_password, new_password)
+        return jsonify({'result': result}), 200
+    except Exception as e:
+        logger.error(f"An error occurred: {e}")
+        return jsonify({'error': str(e)}), 500
+    finally:
+        cursor.close()
+        conn.close()
+
+
+if __name__ == '__main__':
+    app.run(debug=True, host='127.0.0.1', port=80)
