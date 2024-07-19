@@ -2,17 +2,13 @@
 # 负责主界面展示
 import wx
 from ui_manager.patvs_ui_manager import TestCasesPanel
-from common.tools import Public
+from ui_manager.patvs_admin_ui_manager import TestAdminPanel
 from common.logs import logger
 import sys
 import os
-import win32api
-from requests_manager.patvs_sql import Patvs_SQL
 from requests_manager.http_requests_manager import http_manager
 import json
-import hashlib
 import base64
-import requests
 
 
 def resource_path(relative_path):
@@ -85,24 +81,26 @@ class LoginDialog(wx.Dialog):
     def on_login(self, event):
         username = self.username_text.GetValue()
         password = self.password_text.GetValue()
+        try:
+            # 校验用户凭证
+            pamars = {'username': username, 'password': password}
+            data = http_manager.get_params(f'/validate_user', params=pamars)
+            valid = data.get('valid', False)
+            role = data.get('role', None)
 
-        # 校验用户凭证
-        pamars = {'username': username, 'password': password}
-        data = http_manager.get_params(f'/validate_user', params=pamars)
-        valid = data.get('valid', False)
-        role = data.get('role', None)
+            if valid:
+                if self.remember_me_checkbox.GetValue():
+                    self.save_credentials(username, password)
+                else:
+                    self.clear_credentials()
 
-        if valid:
-            if self.remember_me_checkbox.GetValue():
-                self.save_credentials(username, password)
+                self.logged_in_username = username  # 记录登录后的用户名
+                self.logged_in_role = role  # 记录登录后的用户角色
+                self.EndModal(wx.ID_OK)
             else:
-                self.clear_credentials()
-
-            self.logged_in_username = username  # 记录登录后的用户名
-            self.logged_in_role = role  # 记录登录后的用户角色
-            self.EndModal(wx.ID_OK)
-        else:
-            wx.MessageBox("Invalid username or password", "Error", wx.OK | wx.ICON_ERROR)
+                wx.MessageBox("Invalid username or password", "Error", wx.OK | wx.ICON_ERROR)
+        except Exception as e:
+            wx.MessageBox(f'未知错误: {str(e)}', 'Error', wx.OK | wx.ICON_ERROR)
 
     def on_change_password(self, event):
         dialog = ChangePasswordDialog(self)
@@ -158,13 +156,16 @@ class ChangePasswordDialog(wx.Dialog):
             'old_password': old_password,
             'new_password': new_password
         }
-        data = http_manager.post_data(f'/change_user_password', json_data)
-        logger.warning(data.get('result'))
-        if data.get('result'):
-            wx.MessageBox("Password changed successfully", "Success", wx.OK | wx.ICON_INFORMATION)
-            self.EndModal(wx.ID_OK)
-        else:
-            wx.MessageBox("Invalid username or old password", "Error", wx.OK | wx.ICON_ERROR)
+        try:
+            data = http_manager.post_data(f'/change_user_password', json_data)
+            logger.warning(data.get('result'))
+            if data.get('result'):
+                wx.MessageBox("Password changed successfully", "Success", wx.OK | wx.ICON_INFORMATION)
+                self.EndModal(wx.ID_OK)
+            else:
+                wx.MessageBox("Invalid username or old password", "Error", wx.OK | wx.ICON_ERROR)
+        except Exception as e:
+            wx.MessageBox(f'未知错误: {str(e)}', 'Error', wx.OK | wx.ICON_ERROR)
 
 
 class MainApp(wx.App):
@@ -175,7 +176,7 @@ class MainApp(wx.App):
             role = login_dialog.logged_in_role  # 获取用户角色
 
             if role == 'admin':
-                frame = AdminWindow(None, title="PATVS-Admin", username=username)
+                frame = AdminWindow(None, title="PATVS-Admin")
             else:
                 frame = MainWindow(None, title="PATVS-1.0.0.8", username=username)
 
@@ -194,7 +195,7 @@ class MainWindow(wx.Frame):
     def __init__(self, parent, title, username):
         super(MainWindow, self).__init__(parent, title=title, size=(1000, 700))
 
-        # 添加 TestCasesPanel
+        # tester 的界面逻辑
         self.panel = TestCasesPanel(self, username)
 
         # 设置图标
@@ -215,16 +216,11 @@ class MainWindow(wx.Frame):
 
 
 class AdminWindow(wx.Frame):
-    def __init__(self, parent, title, username):
+    def __init__(self, parent, title):
         super(AdminWindow, self).__init__(parent, title=title, size=(1000, 700))
 
-        # 在这里添加Admin用户的界面逻辑
-        self.panel = wx.Panel(self)
-
-        sizer = wx.BoxSizer(wx.VERTICAL)
-        welcome_text = wx.StaticText(self.panel, label=f"Welcome, {username} (Admin)")
-        sizer.Add(welcome_text, 0, wx.ALL | wx.CENTER, 5)
-        self.panel.SetSizer(sizer)
+        # Admin用户的界面逻辑
+        self.panel = TestAdminPanel(self)
 
         # 设置图标
         if getattr(sys, 'frozen', False):

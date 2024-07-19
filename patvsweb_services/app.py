@@ -148,21 +148,51 @@ def get_plan_names(username):
         conn.close()
 
 
+@app.route('/get_plan_names_by_admin', methods=['GET'])
+def get_plan_names_by_admin():
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    try:
+        manager = TestCaseManager(conn, cursor)
+        plan_names = manager.select_all_plan_names()
+        return jsonify({'plan_names': plan_names}), 200
+    except Exception as e:
+        logger.error(f"An error occurred: {e}")
+        return jsonify({'error': str(e)}), 500
+    finally:
+        cursor.close()
+        conn.close()
+
+
 @app.route('/get_sheet_names', methods=['GET'])
 def get_sheet_names():
     username = request.args.get('username')
     plan_name = request.args.get('plan_name')
-
     logger.info(f"Fetching sheet names for username: {username} and plan_name: {plan_name}")
-
     if not username or not plan_name:
         return jsonify({'error': 'Missing required parameters'}), 400
-
     conn = get_db_connection()
     cursor = conn.cursor()
     try:
         manager = TestCaseManager(conn, cursor)
         sheet_names_with_ids = manager.select_all_sheet_names_by_plan_and_username(plan_name, username)
+        return jsonify({'sheet_names_with_ids': sheet_names_with_ids}), 200
+    except Exception as e:
+        logger.error(f"An error occurred: {e}")
+        return jsonify({'error': str(e)}), 500
+    finally:
+        cursor.close()
+        conn.close()
+
+
+@app.route('/get_sheet_names_by_admin/<string:plan_name>', methods=['GET'])
+def get_sheet_names_by_admin(plan_name):
+    logger.info(f"Fetching sheet names for plan_name: {plan_name}")
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    try:
+        manager = TestCaseManager(conn, cursor)
+        sheet_names_with_ids = manager.select_all_sheet_names_by_plan(plan_name)
         return jsonify({'sheet_names_with_ids': sheet_names_with_ids}), 200
     except Exception as e:
         logger.error(f"An error occurred: {e}")
@@ -339,6 +369,23 @@ def calculate_progress_and_pass_rate(sheet_id):
         conn.close()
 
 
+@app.route('/calculate_plan_statistics/<int:plan_id>', methods=['GET'])
+def calculate_plan_statistics(plan_id):
+    logger.info(f"Fetching plan for plan_id: {plan_id}")
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    try:
+        manager = TestCaseManager(conn, cursor)
+        result = manager.calculate_plan_statistics(plan_id)
+        return jsonify({'result': result}), 200
+    except Exception as e:
+        logger.error(f"An error occurred: {e}")
+        return jsonify({'error': str(e)}), 500
+    finally:
+        cursor.close()
+        conn.close()
+
+
 @app.route('/get_start_time/<int:case_id>', methods=['GET'])
 def get_start_time(case_id):
     logger.info(f"Fetching start_time for case_id: {case_id}")
@@ -349,6 +396,25 @@ def get_start_time(case_id):
         start_time = manager.select_start_time(case_id)
         conn.commit()
         return jsonify({'start_time': start_time}), 200
+    except Exception as e:
+        conn.rollback()
+        logger.error(f"An error occurred: {e}")
+        return jsonify({'error': str(e)}), 500
+    finally:
+        cursor.close()
+        conn.close()
+
+
+@app.route('/get_plan_id/<string:plan_name>', methods=['GET'])
+def get_plan_id(plan_name):
+    logger.info(f"Fetching plan_id for plan_name: {plan_name}")
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    try:
+        manager = TestCaseManager(conn, cursor)
+        plan_id = manager.select_plan_id(plan_name)
+        conn.commit()
+        return jsonify({'plan_id': plan_id}), 200
     except Exception as e:
         conn.rollback()
         logger.error(f"An error occurred: {e}")
@@ -425,6 +491,29 @@ def change_user_password():
         manager = TestCaseManager(conn, cursor)
         result = manager.change_user_password(username, old_password, new_password)
         return jsonify({'result': result}), 200
+    except Exception as e:
+        logger.error(f"An error occurred: {e}")
+        return jsonify({'error': str(e)}), 500
+    finally:
+        cursor.close()
+        conn.close()
+
+
+@app.route('/get_tester', methods=['GET'])
+def get_tester():
+    plan_name = request.args.get('plan_name')
+    sheet_id = request.args.get('sheet_id')
+    logger.info(f"get_tester plan_name: {plan_name}, sheet_id: {sheet_id} ")
+
+    # if not plan_name or not sheet_id:
+    #     return jsonify({'error': 'Missing required parameters'}), 400
+
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    try:
+        manager = TestCaseManager(conn, cursor)
+        tester = manager.select_tester_by_plan_or_sheet(plan_name, sheet_id)
+        return jsonify({'tester': tester}), 200
     except Exception as e:
         logger.error(f"An error occurred: {e}")
         return jsonify({'error': str(e)}), 500

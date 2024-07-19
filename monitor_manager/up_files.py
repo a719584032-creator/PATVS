@@ -2,8 +2,9 @@ from openpyxl import load_workbook
 from openpyxl import Workbook
 from common.rw_excel import MyExcel
 from common.logs import logger
-from requests_manager.patvs_sql import Patvs_SQL
+from requests_manager.http_requests_manager import http_manager
 import os
+
 
 # 检查合并单元格是否符合特定规则
 def is_merged_within_range(merged_ranges, row, start_col, end_col):
@@ -98,7 +99,6 @@ def validate_excel_format(file_name):
 
 
 def run_main(file_name):
-    sql = Patvs_SQL()
     validate_excel_format(file_name)
     data = MyExcel(file_name)
     data.active_sheet('Plan Information')
@@ -118,10 +118,11 @@ def run_main(file_name):
     logger.info(f'sheet_and_tester_and_workloading is {sheet_and_tester_and_workloading}')
     for i in sheet_and_tester_and_workloading:
         model_name, all_case = get_all_test(file_name, i[0])
-        sql.insert_case_by_filename(plan_name, project_name, i[0], i[1], i[2], file_name, all_case, model_name)
+        case_data = {'plan_name': plan_name, 'project_name': project_name, 'sheet_name': i[0], 'tester': i[1],
+                     'workloading': i[2], 'cases': all_case, 'model_name': model_name, 'filename': file_name}
+        http_manager.post_data('/insert_case', json=case_data)
+
 
 if __name__ == '__main__':
     file_name = r'D:\PATVS\TestPlanWithResult_M410_Mouse_PATVS软件测试(1)_20240528100806.xlsx'
     run_main(file_name)
-
-

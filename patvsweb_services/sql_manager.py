@@ -6,6 +6,7 @@ from common.logs import logger
 import os
 import math
 from werkzeug.security import generate_password_hash, check_password_hash
+import re
 
 
 class TestCaseManager:
@@ -104,6 +105,13 @@ class TestCaseManager:
         logger.info(result)
         return [plan_name[0] for plan_name in result]
 
+    def select_all_plan_names(self):
+        query = "SELECT plan_name FROM TestPlan "
+        self.cursor.execute(query, )
+        result = self.cursor.fetchall()
+        logger.info(result)
+        return [plan_name[0] for plan_name in result]
+
     def select_all_sheet_names_by_plan_and_username(self, plan_name, username):
         query = """
         SELECT ts.id, ts.sheet_name
@@ -112,6 +120,22 @@ class TestCaseManager:
         WHERE tp.plan_name = %s AND ts.tester = %s
         """
         self.cursor.execute(query, (plan_name, username))
+        result = self.cursor.fetchall()
+        logger.info(result)
+        if result:
+            # 返回id和sheet_names
+            return result
+        else:
+            return []
+
+    def select_all_sheet_names_by_plan(self, plan_name):
+        query = """
+        SELECT ts.id, ts.sheet_name
+        FROM TestSheet ts
+        JOIN TestPlan tp ON ts.plan_id = tp.id
+        WHERE tp.plan_name = %s
+        """
+        self.cursor.execute(query, (plan_name,))
         result = self.cursor.fetchall()
         logger.info(result)
         if result:
@@ -203,6 +227,28 @@ class TestCaseManager:
             logger.error(f"An error occurred: {e.args[0]}")
             return 0
 
+    def count_workloading_by_sheet_id(self, sheet_id):
+        """
+        统计理论用例耗时
+        :param sheet_id: 测试文件的sheet_id
+        :return: 返回该测试文件中的总用例理论耗时
+        """
+        try:
+            self.cursor.execute("SELECT workloading FROM TestSheet WHERE id=%s", (sheet_id,))
+            workloading_result = self.cursor.fetchone()
+            if workloading_result and workloading_result[0] is not None:
+                # 提取数字部分并转换为分钟
+                match = re.search(r'\d+', workloading_result[0])
+                if match:
+                    return int(match.group(0))
+                else:
+                    return 0
+            else:
+                return 0
+        except mysql.connector.Error as e:
+            logger.error(f"An error occurred: {e.args[0]}")
+            return 0
+
     def count_case_time_by_sheet_id(self, sheet_id):
         """
         统计总用例耗时
@@ -215,7 +261,7 @@ class TestCaseManager:
             if count_result and count_result[0] is not None:
                 # 使用math.ceil函数将秒转换为分钟，并向上取整
                 total_time_in_min = math.ceil(count_result[0] / 60.0)
-                return str(total_time_in_min) + ' min'
+                return total_time_in_min
             else:
                 return 0
         except mysql.connector.Error as e:
@@ -260,6 +306,8 @@ class TestCaseManager:
         """
         # 项目耗时
         case_time_count = self.count_case_time_by_sheet_id(sheet_id)
+        # 理论耗时
+        workloading_time = self.count_workloading_by_sheet_id(sheet_id)
         # 总用例数
         case_count = self.count_case_by_sheet_id(sheet_id)
         # 已执行用例数
@@ -281,14 +329,141 @@ class TestCaseManager:
             "executed_cases_count": executed_cases_count,
             "execution_progress": execution_progress,
             "pass_rate": pass_rate,
-            "case_time_count": case_time_count
+            "case_time_count": case_time_count,
+            "workloading_time": workloading_time
         })
         return {
             "case_count": case_count,
             "executed_cases_count": executed_cases_count,
             "execution_progress": execution_progress,
             "pass_rate": pass_rate,
-            "case_time_count": case_time_count
+            "case_time_count": case_time_count,
+            "workloading_time": workloading_time
+        }
+
+    def count_case_time_by_plan_id(self, plan_id):
+        """
+        统计总用例耗时
+        :param plan_id: 测试计划的plan_id
+        :return: 返回该测试计划中的总用例耗时
+        """
+        try:
+            self.cursor.execute(
+                "SELECT SUM(TestTime) FROM TestCase WHERE sheet_id IN (SELECT id FROM TestSheet WHERE plan_id=%s)",
+                (plan_id,))
+            count_result = self.cursor.fetchone()
+            if count_result and count_result[0] is not None:
+                total_time_in_min = math.ceil(count_result[0] / 60.0)
+                return total_time_in_min
+            else:
+                return 0
+        except mysql.connector.Error as e:
+            logger.error(f"An error occurred: {e.args[0]}")
+            return 0
+
+    def count_workloading_by_plan_id(self, plan_id):
+        """
+        统计理论用例耗时
+        :param plan_id: 测试计划的plan_id
+        :return: 返回该测试计划中的总用例理论耗时
+        """
+        try:
+            self.cursor.execute(
+                "SELECT SUM(CAST(SUBSTRING(workloading, 1, LENGTH(workloading) - 4) AS UNSIGNED)) FROM TestSheet WHERE plan_id=%s",
+                (plan_id,))
+            workloading_result = self.cursor.fetchone()
+            if workloading_result and workloading_result[0] is not None:
+                total_workloading = workloading_result[0]
+                return int(total_workloading)
+            else:
+                return 0
+        except mysql.connector.Error as e:
+            logger.error(f"An error occurred: {e.args[0]}")
+            return 0
+
+    def count_case_by_plan_id(self, plan_id):
+        """
+        统计总用例数
+        :param plan_id: 测试计划的plan_id
+        :return: 返回该测试计划中的总用例数
+        """
+        try:
+            self.cursor.execute(
+                "SELECT COUNT(*) FROM TestCase WHERE sheet_id IN (SELECT id FROM TestSheet WHERE plan_id=%s)",
+                (plan_id,))
+            case_count = self.cursor.fetchone()
+            return case_count[0] if case_count else 0
+        except Exception as e:
+            logger.error(f"An error occurred: {e}")
+            return 0
+
+    def count_executed_case_by_plan_id(self, plan_id):
+        """
+        统计已执行用例数
+        :param plan_id: 测试计划的plan_id
+        :return: 返回该测试计划中已执行的用例数
+        """
+        try:
+            self.cursor.execute(
+                "SELECT COUNT(*) FROM TestCase WHERE sheet_id IN (SELECT id FROM TestSheet WHERE plan_id=%s) AND TestResult IS NOT NULL",
+                (plan_id,))
+            executed_count = self.cursor.fetchone()
+            return executed_count[0] if executed_count else 0
+        except Exception as e:
+            logger.error(f"An error occurred: {e}")
+            return 0
+
+    def count_pass_rate_by_plan_id(self, plan_id):
+        """
+        统计通过用例
+        :param plan_id: 测试计划的plan_id
+        :return: 返回该测试计划中已通过的用例数
+        """
+        try:
+            self.cursor.execute(
+                "SELECT COUNT(*) FROM TestCase WHERE sheet_id IN (SELECT id FROM TestSheet WHERE plan_id=%s) AND TestResult = 'Pass'",
+                (plan_id,))
+            pass_count = self.cursor.fetchone()
+            return pass_count[0] if pass_count else 0
+        except Exception as e:
+            logger.error(f"An error occurred: {e}")
+            return 0
+
+    def calculate_plan_statistics(self, plan_id):
+        """
+        计算测试计划的执行进度和通过率
+        :return: 返回包含执行进度和通过率的字典
+        """
+        case_time_count = self.count_case_time_by_plan_id(plan_id)
+        workloading_time = self.count_workloading_by_plan_id(plan_id)
+        case_count = self.count_case_by_plan_id(plan_id)
+        executed_cases_count = self.count_executed_case_by_plan_id(plan_id)
+        pass_count = self.count_pass_rate_by_plan_id(plan_id)
+
+        execution_progress = "0.00%"
+        pass_rate = "0.00%"
+        if case_count > 0:
+            execution_progress = (executed_cases_count / case_count) * 100
+            execution_progress = f"{execution_progress:.2f}%"
+            pass_rate = (pass_count / case_count) * 100
+            pass_rate = f"{pass_rate:.2f}%"
+
+        logger.warning({
+            "case_count": case_count,
+            "executed_cases_count": executed_cases_count,
+            "execution_progress": execution_progress,
+            "pass_rate": pass_rate,
+            "case_time_count": case_time_count,
+            "workloading_time": workloading_time
+        })
+
+        return {
+            "case_count": case_count,
+            "executed_cases_count": executed_cases_count,
+            "execution_progress": execution_progress,
+            "pass_rate": pass_rate,
+            "case_time_count": case_time_count,
+            "workloading_time": workloading_time
         }
 
     def select_start_time(self, case_id):
@@ -304,6 +479,28 @@ class TestCaseManager:
         else:
             # 查询结果不为空，返回查询得到的时间
             return result[0]
+
+    def select_tester_by_plan_or_sheet(self, plan, sheet=None):
+        if sheet:
+            query = "SELECT DISTINCT tester FROM TestSheet WHERE id = %s"
+            self.cursor.execute(query, (sheet,))
+        else:
+            query = """
+            SELECT DISTINCT ts.tester
+            FROM TestSheet ts
+            JOIN TestPlan tp ON ts.plan_id = tp.id
+            WHERE tp.plan_name = %s
+            """
+            self.cursor.execute(query, (plan,))
+        result = self.cursor.fetchall()
+        logger.info(result)
+        return [tester[0] for tester in result]
+
+    def select_plan_id(self, plan):
+        self.cursor.execute('SELECT id FROM TestPlan WHERE plan_name = %s', (plan,))
+        plan_id = self.cursor.fetchone()
+        logger.info(plan_id)
+        return plan_id[0]
 
     def add_user(self, username, password):
         password_hash = generate_password_hash(password)

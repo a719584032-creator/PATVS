@@ -26,8 +26,6 @@ import win32api
 from requests_manager.http_requests_manager import http_manager
 import win32gui
 
-BASE_URL = 'http://127.0.0.1'
-
 
 def resource_path(relative_path):
     """ Get absolute path to resource, works for dev and for PyInstaller """
@@ -122,7 +120,6 @@ class TestCasesPanel(wx.Panel):
         self.monitor_actions = ['时间', '电源插拔', 'S3+电源插拔', 'S3', 'S4', 'S5', 'Restart',
                                 '键盘按键', 'USB插拔', '锁屏', '鼠标点击']
         self.tests_num = ['1', '3', '5', '10', '20', '50', '100', '300', '500', '1000']
-        self.time_choice_box = wx.ComboBox(self, choices=['1分钟', '5分钟', '10分钟', '30分钟', '1小时'])
         self.actions_box = wx.ComboBox(self, choices=self.monitor_actions)
         self.tests_box = wx.ComboBox(self, choices=self.tests_num)
 
@@ -221,10 +218,7 @@ class TestCasesPanel(wx.Panel):
         actionSizer.Add(self.actions_box, 0, wx.ALL, 5)
         actionSizer.Add(wx.StaticText(self, label="测试次数:"), 0, wx.ALL, 5)
         actionSizer.Add(self.tests_box, 0, wx.ALL, 5)
-        # actionSizer.Add(wx.StaticText(self, label="测试时间:"), 0, wx.ALL, 5)
-        # actionSizer.Add(self.time_choice_box, 0, wx.ALL, 5)
-        # 隐藏时间选择框
-        self.time_choice_box.Hide()
+
         # 添加按钮到新的布局
         buttonSizer2.Add(self.start_button, 0, wx.ALL, 5)
 
@@ -243,7 +237,9 @@ class TestCasesPanel(wx.Panel):
         self.SetSizer(mainSizer)
         # 初始时不显示用例树，等待用户选择计划和用例表后显示
         self.tree.Hide()
-        self.testCases = None  # 初始时没有用例树数据
+        # 初始时没有用例树数据
+        self.testCases = None
+        self.sheet_id = None
         self.CaseID = None
         self.tree.Bind(wx.EVT_TREE_SEL_CHANGED, self.OnSelChanged)
         # 如果有记录，显示上一次打开的页面
@@ -267,13 +263,10 @@ class TestCasesPanel(wx.Panel):
     def on_sheet_select(self, event):
         # 选择用例表后，更新用例树
         selected_index = self.sheet_name_combo.GetSelection()
-        logger.warning('开始调用')
         if selected_index != wx.NOT_FOUND:
-            logger.warning('调用1')
             self.sheet_id = self.sheet_name_combo.GetClientData(selected_index)
             self.sheet_name = self.sheet_name_combo.GetString(selected_index)
             self.testCases = self.PopulateTree(self.sheet_id, self.sheet_name)  # 使用 sheet_id 获取用例树
-            logger.warning('调用2')
             self.tree.Show()  # 选择用例表后显示用例树
             # 更新统计信息
             self.update_statistics()
@@ -291,7 +284,7 @@ class TestCasesPanel(wx.Panel):
         if self.sheet_id:
             data = http_manager.get_params(f'/calculate_progress_and_pass_rate/{self.sheet_id}')
             result = data.get('result')
-            self.case_time_total.SetLabel(f"总耗时: {result['case_time_count']}")
+            self.case_time_total.SetLabel(f"总耗时: {result['case_time_count']}(Min)")
             self.case_total.SetLabel(f"用例总数: {result['case_count']}")
             self.executed_cases.SetLabel(f"已执行用例: {result['executed_cases_count']}")
             self.test_progress.SetLabel(f"测试进度: {result['execution_progress']}")
@@ -621,7 +614,6 @@ class TestCasesPanel(wx.Panel):
             pathname = fileDialog.GetPath()
             filename = os.path.basename(pathname)  # 获取文件名
             # 校验文件是否已存在
-     #       result = self.sql.select_filename_by_filename(filename)
             result = http_manager.get_params(f'/get_filename/{filename}')
             logger.warning('file_exists:', result.get('file_exists'))
             if result.get('file_exists'):

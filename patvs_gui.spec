@@ -2,7 +2,8 @@
 # 设置资源文件和目录
 added_files = [
     ('D:\\PATVS\\ui_manager\\icon\\*', 'icon'),
-    ('D:\\PATVS\\common', 'common')
+    ('D:\\PATVS\\common', 'common'),
+    ('D:\\PATVS\\config.json', 'config.json')
 ]
 
 hidden_imports = [
