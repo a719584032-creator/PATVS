@@ -6,7 +6,7 @@
   </component>
   <component name="DBNavigator.Project.DataEditorManager">
     <record-view-column-sorting-type value="BY_INDEX" />
-    <value-preview-text-wrapping value="true" />
+    <value-preview-text-wrapping value="false" />
     <value-preview-pinned value="false" />
   </component>
   <component name="DBNavigator.Project.DatabaseBrowserManager">
@@ -24,10 +24,7 @@
     <last-used-providers />
   </component>
   <component name="DBNavigator.Project.DatabaseFileManager">
-    <open-files>
-      <object connection-id="b505d553-7b7f-42d8-9e03-1155003dc147" object-ref="schemas/lenovoDb/tables/TestPlan" />
-      <object connection-id="b505d553-7b7f-42d8-9e03-1155003dc147" object-ref="schemas/lenovoDb/tables/TestFile" />
-    </open-files>
+    <open-files />
   </component>
   <component name="DBNavigator.Project.DatabaseSessionManager">
     <connection id="b505d553-7b7f-42d8-9e03-1155003dc147" />

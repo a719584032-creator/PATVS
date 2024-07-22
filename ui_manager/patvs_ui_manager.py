@@ -501,6 +501,8 @@ class TestCasesPanel(wx.Panel):
         elif action == 'Restart':
             self.add_log_message(f"您选择的动作是: {action}，目标测试次数: {num_test}")
             start_time = http_manager.get_start_time(self.CaseID)
+            logger.warning(type(start_time))
+            logger.warning(start_time)
             thread = threading.Thread(target=self.patvs_monitor.test_count_restart_events,
                                       args=(str(start_time), int(num_test),))
             thread.setDaemon(True)

@@ -64,6 +64,7 @@ class HttpRequestManager:
             response = requests.get(f'{self.base_url}/get_start_time/{case_id}')
             response.raise_for_status()
             data = response.json()
+            logger.warning(data)
             return data.get('start_time')
         except requests.RequestException as e:
             logger.error(f'HTTP GET request to /get_plan_names failed: {e}')

@@ -27,6 +27,7 @@ class TestCaseManager:
             now = datetime.now()
             formatted_now = now.strftime('%Y-%m-%d %H:%M:%S')
             logger.info("开始记录执行时间，动作和次数")
+            logger.warning(formatted_now)
             self.cursor.execute("UPDATE TestCase SET StartTime = %s, Actions = %s, TestNum = %s WHERE CaseID = %s",
                                 (formatted_now, actions, actions_num, case_id))
 
@@ -284,20 +285,36 @@ class TestCaseManager:
             logger.error(f"An error occurred: {e}")
             return 0
 
-    def count_pass_rate_by_sheet_id(self, sheet_id):
+    def count_test_case_results_by_sheet_id(self, sheet_id):
         """
-        统计通过用例
+        统计通过、失败和阻塞的用例
         :param sheet_id: 测试文件的sheet_id
-        :return: 返回该测试文件中已通过的用例数
+        :return: 返回该测试文件中已通过、失败和阻塞的用例数
         """
         try:
-            self.cursor.execute("SELECT COUNT(*) FROM TestCase WHERE sheet_id = %s AND TestResult = 'Pass'",
-                                (sheet_id,))
-            pass_count = self.cursor.fetchone()
-            return pass_count[0] if pass_count else 0
+            query = """
+            SELECT 
+                SUM(CASE WHEN TestResult = 'Pass' THEN 1 ELSE 0 END) AS pass_count,
+                SUM(CASE WHEN TestResult = 'Fail' THEN 1 ELSE 0 END) AS fail_count,
+                SUM(CASE WHEN TestResult = 'Block' THEN 1 ELSE 0 END) AS block_count
+            FROM TestCase 
+            WHERE sheet_id = %s
+            """
+            self.cursor.execute(query, (sheet_id,))
+            result = self.cursor.fetchone()
+            pass_count, fail_count, block_count = result if result else (0, 0, 0)
+            return {
+                'pass_count': pass_count,
+                'fail_count': fail_count,
+                'block_count': block_count
+            }
         except Exception as e:
             logger.error(f"An error occurred: {e}")
-            return 0
+            return {
+                'pass_count': 0,
+                'fail_count': 0,
+                'block_count': 0
+            }
 
     def calculate_progress_and_pass_rate(self, sheet_id):
         """
@@ -313,22 +330,24 @@ class TestCaseManager:
         # 已执行用例数
         executed_cases_count = self.count_executed_case_by_sheet_id(sheet_id)
         # 通过用例数
-        pass_count = self.count_pass_rate_by_sheet_id(sheet_id)
-        # 初始化执行进度和通过率
-        execution_progress = "0.00%"
-        pass_rate = "0.00%"
-        if case_count > 0:
-            # 计算执行进度百分比
-            execution_progress = (executed_cases_count / case_count) * 100
-            execution_progress = f"{execution_progress:.2f}%"
-            # 计算通过率百分比
-            pass_rate = (pass_count / case_count) * 100
-            pass_rate = f"{pass_rate:.2f}%"
+        result_count = self.count_test_case_results_by_sheet_id(sheet_id)
+
+        # 计算执行进度百分比
+        def calculate_percentage(part, whole):
+            return f"{(part / whole) * 100:.2f}%" if whole > 0 else "0.00%"
+
+        execution_progress = calculate_percentage(executed_cases_count, case_count)
+        pass_rate = calculate_percentage(result_count['pass_count'], case_count)
+        fail_rate = calculate_percentage(result_count['fail_count'], case_count)
+        block_rate = calculate_percentage(result_count['block_count'], case_count)
+
         logger.warning({
             "case_count": case_count,
             "executed_cases_count": executed_cases_count,
             "execution_progress": execution_progress,
             "pass_rate": pass_rate,
+            "fail_rate": fail_rate,
+            "block_rate": block_rate,
             "case_time_count": case_time_count,
             "workloading_time": workloading_time
         })
@@ -337,6 +356,8 @@ class TestCaseManager:
             "executed_cases_count": executed_cases_count,
             "execution_progress": execution_progress,
             "pass_rate": pass_rate,
+            "fail_rate": fail_rate,
+            "block_rate": block_rate,
             "case_time_count": case_time_count,
             "workloading_time": workloading_time
         }
@@ -413,21 +434,36 @@ class TestCaseManager:
             logger.error(f"An error occurred: {e}")
             return 0
 
-    def count_pass_rate_by_plan_id(self, plan_id):
+    def count_test_case_results_by_plan_id(self, plan_id):
         """
-        统计通过用例
+        统计通过、失败和阻塞的用例
         :param plan_id: 测试计划的plan_id
-        :return: 返回该测试计划中已通过的用例数
+        :return: 返回该测试计划中已通过、失败和阻塞的用例数
         """
         try:
-            self.cursor.execute(
-                "SELECT COUNT(*) FROM TestCase WHERE sheet_id IN (SELECT id FROM TestSheet WHERE plan_id=%s) AND TestResult = 'Pass'",
-                (plan_id,))
-            pass_count = self.cursor.fetchone()
-            return pass_count[0] if pass_count else 0
+            query = """
+            SELECT 
+                SUM(CASE WHEN TestResult = 'Pass' THEN 1 ELSE 0 END) AS pass_count,
+                SUM(CASE WHEN TestResult = 'Fail' THEN 1 ELSE 0 END) AS fail_count,
+                SUM(CASE WHEN TestResult = 'Block' THEN 1 ELSE 0 END) AS block_count
+            FROM TestCase 
+            WHERE sheet_id IN (SELECT id FROM TestSheet WHERE plan_id = %s)
+            """
+            self.cursor.execute(query, (plan_id,))
+            result = self.cursor.fetchone()
+            pass_count, fail_count, block_count = result if result else (0, 0, 0)
+            return {
+                'pass_count': pass_count,
+                'fail_count': fail_count,
+                'block_count': block_count
+            }
         except Exception as e:
             logger.error(f"An error occurred: {e}")
-            return 0
+            return {
+                'pass_count': 0,
+                'fail_count': 0,
+                'block_count': 0
+            }
 
     def calculate_plan_statistics(self, plan_id):
         """
@@ -438,30 +474,34 @@ class TestCaseManager:
         workloading_time = self.count_workloading_by_plan_id(plan_id)
         case_count = self.count_case_by_plan_id(plan_id)
         executed_cases_count = self.count_executed_case_by_plan_id(plan_id)
-        pass_count = self.count_pass_rate_by_plan_id(plan_id)
+        result_count = self.count_test_case_results_by_plan_id(plan_id)
 
-        execution_progress = "0.00%"
-        pass_rate = "0.00%"
-        if case_count > 0:
-            execution_progress = (executed_cases_count / case_count) * 100
-            execution_progress = f"{execution_progress:.2f}%"
-            pass_rate = (pass_count / case_count) * 100
-            pass_rate = f"{pass_rate:.2f}%"
+        # 计算执行进度百分比
+        def calculate_percentage(part, whole):
+            return f"{(part / whole) * 100:.2f}%" if whole > 0 else "0.00%"
+
+        execution_progress = calculate_percentage(executed_cases_count, case_count)
+        pass_rate = calculate_percentage(result_count['pass_count'], case_count)
+        fail_rate = calculate_percentage(result_count['fail_count'], case_count)
+        block_rate = calculate_percentage(result_count['block_count'], case_count)
 
         logger.warning({
             "case_count": case_count,
             "executed_cases_count": executed_cases_count,
             "execution_progress": execution_progress,
             "pass_rate": pass_rate,
+            "fail_rate": fail_rate,
+            "block_rate": block_rate,
             "case_time_count": case_time_count,
             "workloading_time": workloading_time
         })
-
         return {
             "case_count": case_count,
             "executed_cases_count": executed_cases_count,
             "execution_progress": execution_progress,
             "pass_rate": pass_rate,
+            "fail_rate": fail_rate,
+            "block_rate": block_rate,
             "case_time_count": case_time_count,
             "workloading_time": workloading_time
         }
@@ -469,16 +509,18 @@ class TestCaseManager:
     def select_start_time(self, case_id):
         self.cursor.execute("SELECT StartTime FROM TestCase WHERE CaseID = %s", (case_id,))
         result = self.cursor.fetchone()
-        logger.info(result)
-        if result[0] is None:
-            # 查询结果为空，获取当前时间
-            current_time = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-            self.cursor.execute("UPDATE TestCase SET StartTime = %s WHERE CaseID = %s", (current_time, case_id))
-            # 返回当前时间
-            return current_time
-        else:
-            # 查询结果不为空，返回查询得到的时间
-            return result[0]
+        return result[0]
+        # if result[0] is None:
+        #     # 查询结果为空，获取当前时间
+        #     current_time = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+        #     self.cursor.execute("UPDATE TestCase SET StartTime = %s WHERE CaseID = %s", (current_time, case_id))
+        #     logger.warning(111111111111111111111111111)
+        #     logger.warning(current_time)
+        #     # 返回当前时间
+        #     return current_time
+        # else:
+        #     # 查询结果不为空，返回查询得到的时间
+
 
     def select_tester_by_plan_or_sheet(self, plan, sheet=None):
         if sheet:

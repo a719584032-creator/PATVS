@@ -46,14 +46,16 @@ class PercentagePanel(wx.Panel):
         self.figure.clear()
         ax = self.figure.add_subplot(111)
 
-        labels = ['Execution Progress', 'Pass Rate', 'Others']
-        execution_progress = float(data['execution_progress'].strip('%'))
+        labels = ['Pass Rate', 'Fail Rate', 'Block Rate', 'Not Executed']
         pass_rate = float(data['pass_rate'].strip('%'))
-        others = 100 - execution_progress - pass_rate  # 计算剩余百分比
+        fail_rate = float(data['fail_rate'].strip('%'))
+        block_rate = float(data['block_rate'].strip('%'))
+        not_executed = 100 - pass_rate - fail_rate - block_rate  # 计算未执行的百分比
 
-        values = [execution_progress, pass_rate, others]
+        values = [pass_rate, fail_rate, block_rate, not_executed]
+        colors = ['green', 'red', 'gray', 'blue']  # 指定颜色
 
-        ax.pie(values, labels=labels, autopct='%1.1f%%', startangle=140)
+        ax.pie(values, labels=labels, autopct='%1.1f%%', startangle=140, colors=colors)
         ax.set_title('Test Case Percentages')
 
         self.canvas.draw()

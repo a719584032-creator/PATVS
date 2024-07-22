@@ -394,7 +394,10 @@ def get_start_time(case_id):
     try:
         manager = TestCaseManager(conn, cursor)
         start_time = manager.select_start_time(case_id)
-        conn.commit()
+        if start_time:
+            # Convert datetime object to string
+            start_time = start_time.strftime('%Y-%m-%d %H:%M:%S')
+        logger.warning(start_time)
         return jsonify({'start_time': start_time}), 200
     except Exception as e:
         conn.rollback()
