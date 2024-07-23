@@ -132,6 +132,7 @@ class TestCasesPanel(wx.Panel):
 
         # 创建布局，将按钮放置在左上角
         buttonSizer = wx.BoxSizer(wx.HORIZONTAL)
+        labelSizer = wx.BoxSizer(wx.HORIZONTAL)
 
         # 将按钮添加到布局中
         buttonSizer.Add(self.upload_button, 0, wx.ALL, 5)
@@ -139,40 +140,42 @@ class TestCasesPanel(wx.Panel):
         buttonSizer.Add(self.config_button, 0, wx.ALL, 5)
         buttonSizer.Add(self.status_button, 0, wx.ALL, 5)
         buttonSizer.Add(self.annex_button, 0, wx.ALL, 5)
-        # 添加弹性空间，负责将后续的控件推向中间
-        buttonSizer.AddStretchSpacer(prop=1)
 
-        # 添加居中的标签（初始为空）
+        # 添加统计的标签（初始为空）
         self.case_time_total = wx.StaticText(self, label="总耗时: N/A")
-        self.case_time_total.SetFont(font)
-        buttonSizer.Add(self.case_time_total, 0, wx.ALIGN_CENTER | wx.ALL, 5)
+     #   self.case_time_total.SetFont(font)
+        labelSizer.Add(self.case_time_total, 0, wx.ALIGN_CENTER | wx.ALL, 5)
 
-        # 添加间隙,以像素为单位的间隔宽度
-        buttonSizer.AddSpacer(30)
         self.case_total = wx.StaticText(self, label="用例总数: N/A")
-        self.case_total.SetFont(font)
-        buttonSizer.Add(self.case_total, 0, wx.ALIGN_CENTER | wx.ALL, 5)
-
-        # 添加间隙,以像素为单位的间隔宽度
-        buttonSizer.AddSpacer(100)
+    #    self.case_total.SetFont(font)
+        labelSizer.Add(self.case_total, 0, wx.ALIGN_CENTER | wx.ALL, 5)
 
         self.executed_cases = wx.StaticText(self, label="已执行用例: N/A")
-        self.executed_cases.SetFont(font)  # 设置字体大小
-        buttonSizer.Add(self.executed_cases, 0, wx.ALIGN_CENTER | wx.ALL, 5)
+      #  self.executed_cases.SetFont(font)
+        labelSizer.Add(self.executed_cases, 0, wx.ALIGN_CENTER | wx.ALL, 5)
 
-        # 再次添加弹性空间，确保标签之后的空间与之前的空间保持平衡
-        buttonSizer.AddStretchSpacer(prop=1)
+        self.pass_count = wx.StaticText(self, label="Pass: N/A")
+    #    self.pass_count.SetFont(font)
+        labelSizer.Add(self.pass_count, 0, wx.ALIGN_CENTER | wx.ALL, 5)
+
+        self.fail_count = wx.StaticText(self, label="Fail: N/A")
+     #   self.fail_count.SetFont(font)
+        labelSizer.Add(self.fail_count, 0, wx.ALIGN_CENTER | wx.ALL, 5)
+
+        self.block_count = wx.StaticText(self, label="Block: N/A")
+      #  self.block_count.SetFont(font)
+        labelSizer.Add(self.block_count, 0, wx.ALIGN_CENTER | wx.ALL, 5)
 
         # 创建主布局
         mainSizer = wx.BoxSizer(wx.VERTICAL)
 
         # 在主布局中加入按钮布局，并使其水平居中
         mainSizer.Add(buttonSizer, 0, wx.EXPAND)
+        mainSizer.Add(labelSizer, 0, wx.EXPAND)
 
         # 单独创建一个水平盒子来放置 case_search_combo 下拉框
         caseSearchSizer = wx.BoxSizer(wx.HORIZONTAL)
         self.testerLabel = wx.StaticText(self, label=f"测试人员: {username}")
-        #    self.testerLabel.SetFont(font)
         caseSearchSizer.Add(self.testerLabel, 0, wx.ALL, 5)
 
         self.planLabel = wx.StaticText(self, label="测试计划")
@@ -183,21 +186,10 @@ class TestCasesPanel(wx.Panel):
         caseSearchSizer.Add(self.sheetLabel, 0, wx.ALL, 5)
         caseSearchSizer.Add(self.sheet_name_combo, 0, wx.ALL, 5)
 
-        # 添加透明占位符,保持对齐
-        dummyLabel = wx.StaticText(self, label="")
-        dummyLabel.SetMinSize((60, -1))
-        caseSearchSizer.Add(dummyLabel, 0, wx.EXPAND)
-
-        #  caseSearchSizer.AddStretchSpacer(prop=1)
-        caseSearchSizer.AddSpacer(10)
-        self.test_progress = wx.StaticText(self, label="测试进度: N/A")
-        self.test_progress.SetFont(font)  # 设置字体大小
-        caseSearchSizer.Add(self.test_progress, 0, wx.ALIGN_CENTER | wx.ALL, 5)
-        caseSearchSizer.AddSpacer(10)
-        self.passing_rate = wx.StaticText(self, label="通过率: N/A")
-        self.passing_rate.SetFont(font)  # 设置字体大小
-        caseSearchSizer.Add(self.passing_rate, 0, wx.ALIGN_CENTER | wx.ALL, 5)
-        caseSearchSizer.AddStretchSpacer(prop=1)
+        # # 添加透明占位符,保持对齐
+        # dummyLabel = wx.StaticText(self, label="")
+        # dummyLabel.SetMinSize((60, -1))
+        # caseSearchSizer.Add(dummyLabel, 0, wx.EXPAND)
 
         # 在主布局中加入 case_search_combo 布局，确保它在按钮下方
         mainSizer.Add(caseSearchSizer, 0, wx.EXPAND)
@@ -276,8 +268,10 @@ class TestCasesPanel(wx.Panel):
         self.case_time_total.SetLabel("总耗时: N/A")
         self.case_total.SetLabel("用例总数: N/A")
         self.executed_cases.SetLabel("已执行用例: N/A")
-        self.test_progress.SetLabel("测试进度: N/A")
-        self.passing_rate.SetLabel("通过率: N/A")
+        self.pass_count.SetLabel("Pass: N/A")
+        self.fail_count.SetLabel("Fail: N/A")
+        self.block_count.SetLabel("Block: N/A")
+
 
     def update_statistics(self):
         # 更新统计信息
@@ -287,8 +281,10 @@ class TestCasesPanel(wx.Panel):
             self.case_time_total.SetLabel(f"总耗时: {result['case_time_count']}(Min)")
             self.case_total.SetLabel(f"用例总数: {result['case_count']}")
             self.executed_cases.SetLabel(f"已执行用例: {result['executed_cases_count']}")
-            self.test_progress.SetLabel(f"测试进度: {result['execution_progress']}")
-            self.passing_rate.SetLabel(f"通过率: {result['pass_rate']}")
+            self.pass_count.SetLabel(f"Pass: {result['pass_count']}")
+            self.fail_count.SetLabel(f"Fail: {result['fail_count']}")
+            self.block_count.SetLabel(f"Block: {result['block_count']}")
+
 
     def show_message_box(self, message, total):
         dlg = wx.MessageDialog(self, message, "测试进度", wx.YES_NO | wx.ICON_QUESTION)
@@ -444,7 +440,8 @@ class TestCasesPanel(wx.Panel):
             wx.MessageBox('已有测试结果，请重置此条测试用例后再进行测试', 'Warning')
             return
         wx.CallAfter(self.case_disable)
-        http_manager.post_data('/update_start_time', {'case_id': self.CaseID, 'actions': action, 'actions_num': num_test})
+        http_manager.post_data('/update_start_time',
+                               {'case_id': self.CaseID, 'actions': action, 'actions_num': num_test})
         # 初始化终止信号
         self.patvs_monitor.stop_event = True
         # 使用多线程异步运行，防止GUI界面卡死
@@ -653,6 +650,7 @@ class TestCasesPanel(wx.Panel):
 
                 self.plan_name_combo.SetValue(all_plans[0])
                 self.on_plan_select(None)  # 自动加载 test_sheet
+
             wx.CallAfter(complete_upload)
 
             # self.sheet_name_combo.SetValue(self.sheet_name)
@@ -864,10 +862,7 @@ class TestCasesPanel(wx.Panel):
         :param sheet_id: 用例文件
         :return: 所有用例内容
         """
-        logger.warning(11111111111111111111111)
-        logger.warning(sheet_id)
-        logger.warning(sheet_name)
-        logger.warning(222222222222222222222222)
+        logger.warning("开始展示用例树节点")
         self.tree.DeleteAllItems()  # 清空现有的树状结构
         all_case = http_manager.get_cases_by_sheet_id(sheet_id)
         self.update_statistics()
@@ -931,6 +926,7 @@ class TestCasesPanel(wx.Panel):
         :param event:
         :return:
         """
+        logger.warning("开始展示用例详情")
         item = event.GetItem()
         parent = self.tree.GetItemParent(item)
 

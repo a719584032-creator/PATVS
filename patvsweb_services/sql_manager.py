@@ -348,6 +348,9 @@ class TestCaseManager:
             "pass_rate": pass_rate,
             "fail_rate": fail_rate,
             "block_rate": block_rate,
+            "pass_count": result_count['pass_count'],
+            "fail_count": result_count['fail_count'],
+            "block_count": result_count['block_count'],
             "case_time_count": case_time_count,
             "workloading_time": workloading_time
         })
@@ -358,6 +361,9 @@ class TestCaseManager:
             "pass_rate": pass_rate,
             "fail_rate": fail_rate,
             "block_rate": block_rate,
+            "pass_count": result_count['pass_count'],
+            "fail_count": result_count['fail_count'],
+            "block_count": result_count['block_count'],
             "case_time_count": case_time_count,
             "workloading_time": workloading_time
         }
@@ -492,6 +498,9 @@ class TestCaseManager:
             "pass_rate": pass_rate,
             "fail_rate": fail_rate,
             "block_rate": block_rate,
+            "pass_count": result_count['pass_count'],
+            "fail_count": result_count['fail_count'],
+            "block_count": result_count['block_count'],
             "case_time_count": case_time_count,
             "workloading_time": workloading_time
         })
@@ -502,6 +511,9 @@ class TestCaseManager:
             "pass_rate": pass_rate,
             "fail_rate": fail_rate,
             "block_rate": block_rate,
+            "pass_count": result_count['pass_count'],
+            "fail_count": result_count['fail_count'],
+            "block_count": result_count['block_count'],
             "case_time_count": case_time_count,
             "workloading_time": workloading_time
         }

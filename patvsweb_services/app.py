@@ -122,7 +122,13 @@ def get_cases(sheet_id):
     try:
         manager = TestCaseManager(conn, cursor)
         cases = manager.select_case_by_sheet_id(sheet_id)
-        return jsonify({'cases': cases}), 200
+        formatted_cases = []
+        for case in cases:
+            case_list = list(case)
+            case_list[8] = case_list[8].strftime('%Y-%m-%d %H:%M:%S') if case_list[8] else None
+            case_list[9] = case_list[9].strftime('%Y-%m-%d %H:%M:%S') if case_list[9] else None
+            formatted_cases.append(case_list)
+        return jsonify({'cases': formatted_cases}), 200
     except Exception as e:
         logger.error(f"An error occurred: {e}")
         return jsonify({'error': str(e)}), 500
@@ -261,7 +267,13 @@ def get_cases_by_case_id(case_id):
     try:
         manager = TestCaseManager(conn, cursor)
         cases = manager.select_cases_by_case_id(case_id)
-        return jsonify({'cases': cases}), 200
+        formatted_cases = []
+        for case in cases:
+            case_list = list(case)
+            case_list[8] = case_list[8].strftime('%Y-%m-%d %H:%M:%S') if case_list[8] else None
+            case_list[9] = case_list[9].strftime('%Y-%m-%d %H:%M:%S') if case_list[9] else None
+            formatted_cases.append(case_list)
+        return jsonify({'cases': formatted_cases}), 200
     except Exception as e:
         logger.error(f"An error occurred: {e}")
         return jsonify({'error': str(e)}), 500
