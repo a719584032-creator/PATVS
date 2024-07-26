@@ -2,26 +2,30 @@ from flask import Flask, request, jsonify
 from common.logs import logger
 from mysql.connector.pooling import MySQLConnectionPool
 from patvsweb_services.sql_manager import TestCaseManager
+from functools import wraps
 import os
+import jwt
+import datetime
 
 app = Flask(__name__)
+app.config['SECRET_KEY'] = 'your_secret_key'
 # 数据库配置
-# DB_CONFIG = {
-#     'host': os.getenv('DB_HOST'),
-#     'user': os.getenv('DB_USER'),
-#     'password': os.getenv('DB_PASSWORD'),
-#     'database': os.getenv('DB_DATABASE'),
-#     'buffered': True
-# }
-
 DB_CONFIG = {
-    'host': 'rm-cn-lf63r60vh0003gto.rwlb.rds.aliyuncs.com',
-    'user': 'yesq3_lenovo',
-    'password': 'patvs_Lenovo',
-    'database': 'lenovoDb',
+    'host': os.getenv('DB_HOST'),
+    'user': os.getenv('DB_USER'),
+    'password': os.getenv('DB_PASSWORD'),
+    'database': os.getenv('DB_DATABASE'),
     'buffered': True
 }
 
+# DB_CONFIG = {
+#     'host': 'rm-cn-lf63r60vh0003gto.rwlb.rds.aliyuncs.com',
+#     'user': 'yesq3_lenovo',
+#     'password': 'patvs_Lenovo',
+#     'database': 'lenovoDb',
+#     'buffered': True
+# }
+logger.warning(os.getenv('DB_HOST'))
 db_pool = MySQLConnectionPool(pool_name="mypool", pool_size=10, **DB_CONFIG)
 
 
@@ -29,8 +33,25 @@ def get_db_connection():
     return db_pool.get_connection()
 
 
+def token_required(f):
+    @wraps(f)
+    def decorated(*args, **kwargs):
+        token = request.headers.get('x-access-tokens')
+        if not token:
+            return jsonify({'error': 'Token is missing!'}), 403
+        try:
+            data = jwt.decode(token, app.config['SECRET_KEY'], algorithms=["HS256"])
+            current_user = data['username']
+            logger.warning(current_user)
+        except:
+            return jsonify({'error': 'Token is invalid!'}), 403
+        return f(*args, current_user=current_user, **kwargs)
+    return decorated
+
+
 @app.route('/update_start_time', methods=['POST'])
-def update_start_time():
+@token_required
+def update_start_time(current_user):
     data = request.json
     case_id = data.get('case_id')
     actions = data.get('actions')
@@ -56,7 +77,8 @@ def update_start_time():
 
 
 @app.route('/update_end_time', methods=['POST'])
-def update_end_time():
+@token_required
+def update_end_time(current_user):
     data = request.json
     case_id = data.get('case_id')
     case_result = data.get('case_result')
@@ -81,7 +103,8 @@ def update_end_time():
 
 
 @app.route('/insert_case', methods=['POST'])
-def insert_case():
+@token_required
+def insert_case(current_user):
     data = request.json
     plan_name = data.get('plan_name')
     project_name = data.get('project_name')
@@ -283,7 +306,8 @@ def get_cases_by_case_id(case_id):
 
 
 @app.route('/update_test_num', methods=['POST'])
-def update_test_num():
+@token_required
+def update_test_num(current_user):
     data = request.json
     case_id = data.get('case_id')
     test_num = data.get('test_num')
@@ -344,7 +368,8 @@ def get_case_result(case_id):
 
 
 @app.route('/reset_case_result', methods=['POST'])
-def reset_case_result():
+@token_required
+def reset_case_result(current_user):
     data = request.json
     case_id = data.get('case_id')
     logger.info(f"Fetching cases for case_id: {case_id}")
@@ -440,7 +465,8 @@ def get_plan_id(plan_name):
 
 
 @app.route('/add_user', methods=['POST'])
-def add_user():
+@token_required
+def add_user(current_user):
     data = request.json
     username = data.get('username')
     password = data.get('password')
@@ -465,10 +491,11 @@ def add_user():
         conn.close()
 
 
-@app.route('/validate_user', methods=['GET'])
+@app.route('/login', methods=['POST'])
 def validate_user():
-    username = request.args.get('username')
-    password = request.args.get('password')
+    data = request.json
+    username = data.get('username')
+    password = data.get('password')
     logger.info(f"login username: {username}, password: {password} ")
 
     if not username or not password:
@@ -479,7 +506,14 @@ def validate_user():
     try:
         manager = TestCaseManager(conn, cursor)
         valid, role = manager.validate_user(username, password)
-        return jsonify({'valid': valid, 'role': role}), 200
+        if valid:
+            token = jwt.encode({
+                'username': username,
+                'exp': datetime.datetime.utcnow() + datetime.timedelta(hours=24)
+            }, app.config['SECRET_KEY'], algorithm="HS256")
+            return jsonify({'token': token, 'role': role})
+        else:
+            return jsonify({'error': 'Invalid credentials'}), 401
     except Exception as e:
         logger.error(f"An error occurred: {e}")
         return jsonify({'error': str(e)}), 500

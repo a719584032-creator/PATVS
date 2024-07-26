@@ -49,12 +49,13 @@ class ResetButtonRenderer(wx.grid.GridCellRenderer):
 
 
 class TestCasesPanel(wx.Panel):
-    def __init__(self, parent, username):
+    def __init__(self, parent, username, token):
         super().__init__(parent)
         # 在主线程中创建一个事件,用来通知阻塞情况下终止线程
         self.stop_event = True
         self.patvs_monitor = Patvs_Fuction(self, self.stop_event)
         self.username = username  # 保存用户名
+        self.token = token
         self.splitter = wx.SplitterWindow(self)
         # 初始化 log_splitter
         self.log_splitter = wx.SplitterWindow(self.splitter)
@@ -315,12 +316,12 @@ class TestCasesPanel(wx.Panel):
             'start_clicked': self.start_clicked if hasattr(self, 'start_clicked') else False
         }
         logger.info('Saving state.')
-        with open('window_state.json', 'w') as state_file:
+        with open(r'D:\PATVS\window_state.json', 'w') as state_file:
             json.dump(state, state_file)
 
     def restore_state(self):
         try:
-            with open('window_state.json', 'r') as state_file:
+            with open(r'D:\PATVS\window_state.json', 'r') as state_file:
                 state = json.load(state_file)
                 # 防止 username 篡改数据
                 if state['username'] == self.username:
@@ -394,7 +395,7 @@ class TestCasesPanel(wx.Panel):
         if clicked_button is self.result_buttons['Pass']:
             # 处理 pass
             logger.info(f"Pass Button clicked {self.CaseID}")
-            http_manager.update_end_time_case_id(self.CaseID, 'Pass')
+            http_manager.update_end_time_case_id(self.CaseID, 'Pass', token=self.token)
             wx.CallAfter(self.case_enable)
             wx.CallAfter(self.refresh_node_case_status, case_status=case_result)
             wx.CallAfter(self.update_statistics)
@@ -406,7 +407,7 @@ class TestCasesPanel(wx.Panel):
                 input_content = dlg.GetValue().strip()  # 获取输入的内容
                 if input_content:
                     logger.info(f"{case_result} Button clicked, Content: {input_content}")
-                    http_manager.update_end_time_case_id(self.CaseID, case_result, input_content)
+                    http_manager.update_end_time_case_id(self.CaseID, case_result, input_content, self.token)
                     wx.CallAfter(self.case_enable)
                     wx.CallAfter(self.refresh_node_case_status, case_status=case_result)
                     wx.CallAfter(self.update_statistics)
@@ -441,7 +442,7 @@ class TestCasesPanel(wx.Panel):
             return
         wx.CallAfter(self.case_disable)
         http_manager.post_data('/update_start_time',
-                               {'case_id': self.CaseID, 'actions': action, 'actions_num': num_test})
+                               {'case_id': self.CaseID, 'actions': action, 'actions_num': num_test}, token=self.token)
         # 初始化终止信号
         self.patvs_monitor.stop_event = True
         # 使用多线程异步运行，防止GUI界面卡死
@@ -624,7 +625,7 @@ class TestCasesPanel(wx.Panel):
 
             def complete_upload():
                 try:
-                    run_main(pathname)
+                    run_main(pathname, self.token)
                     wx.CallAfter(wx.MessageBox, "文件上传和解析成功", "提示", wx.OK | wx.ICON_INFORMATION)
                 except Exception as e:
                     # 格式校验出错
@@ -795,7 +796,7 @@ class TestCasesPanel(wx.Panel):
             reset_response = reset_msg.ShowModal()
             if reset_response == wx.ID_YES:
                 logger.info(f"重置ID: {case_id} 的用例测试状态")
-                http_manager.post_data('/reset_case_result', {'case_id': case_id})
+                http_manager.post_data('/reset_case_result', {'case_id': case_id}, self.token)
                 evt.Skip(False)
                 self.reset_grid(self.grid)  # 刷新网格布局
                 wx.CallAfter(self.refresh_node_case_status, case_id=case_id)

@@ -10,6 +10,10 @@ from requests_manager.http_requests_manager import http_manager
 import json
 import base64
 
+directory = "D:\\PATVS"
+if not os.path.exists(directory):
+    os.makedirs(directory)
+file_dir = directory + '/credentials.json'
 
 def resource_path(relative_path):
     """ Get absolute path to resource, works for dev and for PyInstaller """
@@ -47,6 +51,7 @@ class LoginDialog(wx.Dialog):
 
         self.panel.SetSizerAndFit(self.sizer)
         self.Centre()
+        self.token = None
         self.logged_in_username = None
         self.logged_in_role = None
         self.stored_password_hash = ""
@@ -54,8 +59,9 @@ class LoginDialog(wx.Dialog):
         self.load_saved_credentials()
 
     def load_saved_credentials(self):
-        if os.path.exists('credentials.json'):
-            with open('credentials.json', 'r') as file:
+
+        if os.path.exists(file_dir):
+            with open(file_dir, 'r') as file:
                 data = json.load(file)
                 self.username_text.SetValue(data.get('username', ''))
                 self.stored_password_hash = data.get('password', '')
@@ -71,12 +77,12 @@ class LoginDialog(wx.Dialog):
 
     def save_credentials(self, username, password):
         hashed_password = self.encrypt_password(password)
-        with open('credentials.json', 'w') as file:
+        with open(file_dir, 'w') as file:
             json.dump({'username': username, 'password': hashed_password}, file)
 
     def clear_credentials(self):
-        if os.path.exists('credentials.json'):
-            os.remove('credentials.json')
+        if os.path.exists(file_dir):
+            os.remove(file_dir)
 
     def on_login(self, event):
         username = self.username_text.GetValue()
@@ -84,11 +90,11 @@ class LoginDialog(wx.Dialog):
         try:
             # 校验用户凭证
             pamars = {'username': username, 'password': password}
-            data = http_manager.get_params(f'/validate_user', params=pamars)
-            valid = data.get('valid', False)
+            data = http_manager.post_data(f'/login', data=pamars)
             role = data.get('role', None)
 
-            if valid:
+            if 'token' in data:
+                self.token = data['token']
                 if self.remember_me_checkbox.GetValue():
                     self.save_credentials(username, password)
                 else:
@@ -173,12 +179,13 @@ class MainApp(wx.App):
         login_dialog = LoginDialog(None, title="PATVS-测试管理系统")
         if login_dialog.ShowModal() == wx.ID_OK:
             username = login_dialog.logged_in_username
+            token = login_dialog.token
             role = login_dialog.logged_in_role  # 获取用户角色
 
             if role == 'admin':
-                frame = AdminWindow(None, title="PATVS-Admin")
+                frame = AdminWindow(None, title="PATVS-Admin", token=token)
             else:
-                frame = MainWindow(None, title="PATVS-1.0.0.8", username=username)
+                frame = MainWindow(None, title="PATVS-1.0.0.8", username=username, token=token)
 
             self.SetTopWindow(frame)
             frame.Show(True)
@@ -192,11 +199,11 @@ class MainApp(wx.App):
 
 
 class MainWindow(wx.Frame):
-    def __init__(self, parent, title, username):
+    def __init__(self, parent, title, username, token):
         super(MainWindow, self).__init__(parent, title=title, size=(1000, 700))
 
         # tester 的界面逻辑
-        self.panel = TestCasesPanel(self, username)
+        self.panel = TestCasesPanel(self, username, token)
 
         # 设置图标
         if getattr(sys, 'frozen', False):
@@ -216,11 +223,11 @@ class MainWindow(wx.Frame):
 
 
 class AdminWindow(wx.Frame):
-    def __init__(self, parent, title):
+    def __init__(self, parent, title, token):
         super(AdminWindow, self).__init__(parent, title=title, size=(1000, 700))
 
         # Admin用户的界面逻辑
-        self.panel = TestAdminPanel(self)
+        self.panel = TestAdminPanel(self, token)
 
         # 设置图标
         if getattr(sys, 'frozen', False):

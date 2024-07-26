@@ -87,9 +87,9 @@ class TimePanel(wx.Panel):
 
 
 class TestAdminPanel(wx.Panel):
-    def __init__(self, parent):
+    def __init__(self, parent, token):
         super().__init__(parent)
-
+        self.token = token
         # 创建主布局
         mainSizer = wx.BoxSizer(wx.VERTICAL)
 

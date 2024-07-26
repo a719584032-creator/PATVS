@@ -98,7 +98,7 @@ def validate_excel_format(file_name):
     return True
 
 
-def run_main(file_name):
+def run_main(file_name, token):
     validate_excel_format(file_name)
     data = MyExcel(file_name)
     data.active_sheet('Plan Information')
@@ -120,7 +120,7 @@ def run_main(file_name):
         model_name, all_case = get_all_test(file_name, i[0])
         case_data = {'plan_name': plan_name, 'project_name': project_name, 'sheet_name': i[0], 'tester': i[1],
                      'workloading': i[2], 'cases': all_case, 'model_name': model_name, 'filename': file_name}
-        http_manager.post_data('/insert_case', json=case_data)
+        http_manager.post_data('/insert_case', json=case_data, token=token)
 
 
 if __name__ == '__main__':
