@@ -4,6 +4,7 @@ from common.rw_excel import MyExcel
 from common.logs import logger
 from requests_manager.http_requests_manager import http_manager
 import os
+import wx
 
 
 # 检查合并单元格是否符合特定规则
@@ -104,6 +105,9 @@ def run_main(file_name, token):
     data.active_sheet('Plan Information')
     plan_name = data.get_value_by_rc(1, 2)
     logger.info(f'plan_name is {plan_name}')
+    result = http_manager.get_params(f'/get_plan_name_by_planname/{plan_name}').get('plan_exists')
+    if result:
+        raise ValueError(f"当前计划名: {result} 已存在，请勿重复上传")
     project_name = data.get_value_by_rc(1, 4)
     logger.info(f'project_name is {project_name}')
     data.active_sheet('Case List')
@@ -120,7 +124,7 @@ def run_main(file_name, token):
         model_name, all_case = get_all_test(file_name, i[0])
         case_data = {'plan_name': plan_name, 'project_name': project_name, 'sheet_name': i[0], 'tester': i[1],
                      'workloading': i[2], 'cases': all_case, 'model_name': model_name, 'filename': file_name}
-        http_manager.post_data('/insert_case', json=case_data, token=token)
+        http_manager.post_data('/insert_case', data=case_data, token=token)
 
 
 if __name__ == '__main__':

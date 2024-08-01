@@ -14,22 +14,22 @@ class TestCaseManager:
         self.conn = connection
         self.cursor = cursor
 
-    def update_start_time_by_case_id(self, case_id, actions, actions_num):
+    def update_start_time_by_case_id(self, case_id, actions):
         self.cursor.execute("SELECT StartTime,TestResult FROM TestCase WHERE caseID = %s", (case_id,))
         result = self.cursor.fetchall()
         logger.info(result)
         # 确保result的查询结果不是None并且 StartTime（result[0]）也位置None
         if result and result[0][0] is not None and result[0][1] is None:
             logger.info(f"已有执行记录时间 {result},仅修改监控动作和次数")
-            self.cursor.execute("UPDATE TestCase SET Actions = %s, TestNum = %s WHERE CaseID = %s",
-                                (actions, actions_num, case_id))
+            self.cursor.execute("UPDATE TestCase SET Actions = %s WHERE CaseID = %s",
+                                (actions, case_id))
         else:
             now = datetime.now()
             formatted_now = now.strftime('%Y-%m-%d %H:%M:%S')
             logger.info("开始记录执行时间，动作和次数")
             logger.warning(formatted_now)
-            self.cursor.execute("UPDATE TestCase SET StartTime = %s, Actions = %s, TestNum = %s WHERE CaseID = %s",
-                                (formatted_now, actions, actions_num, case_id))
+            self.cursor.execute("UPDATE TestCase SET StartTime = %s, Actions = %s WHERE CaseID = %s",
+                                (formatted_now, actions, case_id))
 
     def update_end_time_case_id(self, case_id, case_result, comment=None):
         self.cursor.execute(f'SELECT StartTime FROM TestCase where CaseID = %s', (case_id,))
@@ -162,6 +162,13 @@ class TestCaseManager:
     def select_plan_name_by_filename(self, filename):
         query = "SELECT plan_name FROM TestPlan WHERE filename = %s"
         self.cursor.execute(query, (filename,))
+        result = self.cursor.fetchone()
+        logger.info(result)
+        return result[0] if result else None
+
+    def select_plan_name_by_plan_name(self, plan_name):
+        query = "SELECT plan_name FROM TestPlan WHERE plan_name = %s"
+        self.cursor.execute(query, (plan_name,))
         result = self.cursor.fetchone()
         logger.info(result)
         return result[0] if result else None
@@ -533,7 +540,6 @@ class TestCaseManager:
         # else:
         #     # 查询结果不为空，返回查询得到的时间
 
-
     def select_tester_by_plan_or_sheet(self, plan, sheet=None):
         if sheet:
             query = "SELECT DISTINCT tester FROM TestSheet WHERE id = %s"
@@ -585,3 +591,9 @@ class TestCaseManager:
         cur.execute('SELECT * FROM TestCase')
         user = cur.fetchall()
         logger.info(user)
+
+    def select_case_title(self, case_id):
+        self.cursor.execute('SELECT CaseTitle FROM TestCase WHERE CaseID = %s', (case_id,))
+        case_title = self.cursor.fetchone()
+        logger.info(case_title)
+        return case_title[0]

@@ -111,23 +111,6 @@ class TestCasesPanel(wx.Panel):
         self.sheet_name_combo = wx.ComboBox(self)
         self.sheet_name_combo.Bind(wx.EVT_COMBOBOX, self.on_sheet_select)
 
-        # 图片
-        lenovo_bitmap = wx.Bitmap(resource_path("icon\\3332.png"), wx.BITMAP_TYPE_ANY)
-        imageCtrl = wx.StaticBitmap(self, bitmap=lenovo_bitmap)
-
-        # 下拉框 监控动作、测试次数
-        # self.monitor_actions = ['时间', '电源插拔', 'S3+电源插拔', 'S3', 'S4', 'S5', 'Restart',
-        #                         '键盘按键', 'USB插拔', 'S3+USB插拔', '锁屏', '鼠标点击']
-        self.monitor_actions = ['时间', '电源插拔', 'S3+电源插拔', 'S3', 'S4', 'S5', 'Restart',
-                                '键盘按键', 'USB插拔', '锁屏', '鼠标点击']
-        self.tests_num = ['1', '3', '5', '10', '20', '50', '100', '300', '500', '1000']
-        self.actions_box = wx.ComboBox(self, choices=self.monitor_actions)
-        self.tests_box = wx.ComboBox(self, choices=self.tests_num)
-
-        # start、pass、fail、block 按钮
-        self.start_button = wx.Button(self, label='start')
-        self.start_button.Bind(wx.EVT_BUTTON, self.start_test)
-
         # 创建一个字体对象，字体大小为16，字体家族为瑞士，风格为正常，但是字体粗细为加粗
         font = wx.Font(12, wx.SWISS, wx.NORMAL, wx.NORMAL)
 
@@ -144,27 +127,27 @@ class TestCasesPanel(wx.Panel):
 
         # 添加统计的标签（初始为空）
         self.case_time_total = wx.StaticText(self, label="总耗时: N/A")
-     #   self.case_time_total.SetFont(font)
+        #   self.case_time_total.SetFont(font)
         labelSizer.Add(self.case_time_total, 0, wx.ALIGN_CENTER | wx.ALL, 5)
 
         self.case_total = wx.StaticText(self, label="用例总数: N/A")
-    #    self.case_total.SetFont(font)
+        #    self.case_total.SetFont(font)
         labelSizer.Add(self.case_total, 0, wx.ALIGN_CENTER | wx.ALL, 5)
 
         self.executed_cases = wx.StaticText(self, label="已执行用例: N/A")
-      #  self.executed_cases.SetFont(font)
+        #  self.executed_cases.SetFont(font)
         labelSizer.Add(self.executed_cases, 0, wx.ALIGN_CENTER | wx.ALL, 5)
 
         self.pass_count = wx.StaticText(self, label="Pass: N/A")
-    #    self.pass_count.SetFont(font)
+        #    self.pass_count.SetFont(font)
         labelSizer.Add(self.pass_count, 0, wx.ALIGN_CENTER | wx.ALL, 5)
 
         self.fail_count = wx.StaticText(self, label="Fail: N/A")
-     #   self.fail_count.SetFont(font)
+        #   self.fail_count.SetFont(font)
         labelSizer.Add(self.fail_count, 0, wx.ALIGN_CENTER | wx.ALL, 5)
 
         self.block_count = wx.StaticText(self, label="Block: N/A")
-      #  self.block_count.SetFont(font)
+        #  self.block_count.SetFont(font)
         labelSizer.Add(self.block_count, 0, wx.ALIGN_CENTER | wx.ALL, 5)
 
         # 创建主布局
@@ -198,6 +181,13 @@ class TestCasesPanel(wx.Panel):
         # 创建新的布局，将下拉框和按钮放在右下脚
         actionSizer = wx.BoxSizer(wx.HORIZONTAL)
         buttonSizer2 = wx.BoxSizer(wx.HORIZONTAL)
+        # 图片
+        lenovo_bitmap = wx.Bitmap(resource_path("icon\\3332.png"), wx.BITMAP_TYPE_ANY)
+        imageCtrl = wx.StaticBitmap(self, bitmap=lenovo_bitmap)
+
+        # start、pass、fail、block 按钮
+        self.start_button = wx.Button(self, label='start')
+        self.start_button.Bind(wx.EVT_BUTTON, self.start_test)
         # 创建按钮并添加到布局
         self.result_buttons = {}
         for button in ['Pass', 'Fail', 'Block']:
@@ -206,23 +196,20 @@ class TestCasesPanel(wx.Panel):
             buttonSizer2.Add(self.result_buttons[button], 0, wx.ALL, 5)
             self.result_buttons[button].Hide()
 
-        # 添加下拉框到新的布局
-        actionSizer.Add(wx.StaticText(self, label="监控动作:"), 0, wx.ALL, 5)
-        actionSizer.Add(self.actions_box, 0, wx.ALL, 5)
-        actionSizer.Add(wx.StaticText(self, label="测试次数:"), 0, wx.ALL, 5)
-        actionSizer.Add(self.tests_box, 0, wx.ALL, 5)
-
-        # 添加按钮到新的布局
-        buttonSizer2.Add(self.start_button, 0, wx.ALL, 5)
+        self.actions_and_num = wx.StaticText(self, label="监控动作和次数: N/A")
 
         # 在主布局中添加按钮布局和新的布局
         mainSizer.Add(self.splitter, 1, wx.EXPAND)
+
+        actionSizer.Add(self.actions_and_num, 0, wx.ALIGN_CENTER_VERTICAL | wx.ALL, 5)
+        actionSizer.AddSpacer(100)  # 添加伸缩控件
 
         # 创建底部布局，将下拉框和按钮放在右侧
         bottomSizer = wx.BoxSizer(wx.HORIZONTAL)
         # 添加图片到布局（最左边）
         bottomSizer.Add(imageCtrl, 0, wx.ALL | wx.ALIGN_LEFT, 5)
-        bottomSizer.Add(actionSizer, 0, wx.ALL, 5)
+        bottomSizer.Add(actionSizer, 1, wx.EXPAND | wx.ALL, 5)
+        bottomSizer.Add(self.start_button, 0, wx.ALIGN_CENTER_VERTICAL | wx.ALL, 5)
         bottomSizer.Add(buttonSizer2, 0, wx.ALL, 5)
         mainSizer.Add(bottomSizer, 0, wx.ALL, 5)
 
@@ -273,7 +260,6 @@ class TestCasesPanel(wx.Panel):
         self.fail_count.SetLabel("Fail: N/A")
         self.block_count.SetLabel("Block: N/A")
 
-
     def update_statistics(self):
         # 更新统计信息
         if self.sheet_id:
@@ -286,16 +272,14 @@ class TestCasesPanel(wx.Panel):
             self.fail_count.SetLabel(f"Fail: {result['fail_count']}")
             self.block_count.SetLabel(f"Block: {result['block_count']}")
 
-
     def show_message_box(self, message, total):
         dlg = wx.MessageDialog(self, message, "测试进度", wx.YES_NO | wx.ICON_QUESTION)
         result = dlg.ShowModal()
         dlg.Destroy()
-
         if result == wx.ID_YES:
             self.timer = wx.Timer(self)
             self.Bind(wx.EVT_TIMER, self.on_timer)
-            self.timer.Start(500)  # 3秒后触发定时器事件
+            self.timer.Start(500)  # 0.5秒后触发定时器事件
         else:
             wx.CallAfter(self.add_log_message, "测试终止，请填写 block 原因。")
 
@@ -311,8 +295,6 @@ class TestCasesPanel(wx.Panel):
             'sheet_id': self.sheet_id,
             'test_case_id': self.tree.GetItemData(
                 self.tree.GetSelection()) if self.tree.GetSelection().IsOk() else None,
-            'test_actions': self.actions_box.GetValue() if self.actions_box.GetValue() else None,
-            'tests_box': self.tests_box.GetValue() if self.tests_box.GetValue() else None,
             'start_clicked': self.start_clicked if hasattr(self, 'start_clicked') else False
         }
         logger.info('Saving state.')
@@ -347,10 +329,6 @@ class TestCasesPanel(wx.Panel):
                                     self.on_sheet_select(None)  # 在找到匹配的sheet_name和sheet_id时调用
                     if 'test_case_id' in state and state['test_case_id']:
                         self.set_tree_selection_by_id(state['test_case_id'])
-                    if 'test_actions' in state and state['test_actions']:
-                        self.actions_box.SetValue(state['test_actions'])
-                    if 'tests_box' in state and state['tests_box']:
-                        self.tests_box.SetValue(state['tests_box'])
                     if 'start_clicked' in state and state['start_clicked']:
                         self.start_clicked = True
                         self.start_test(None)
@@ -387,6 +365,7 @@ class TestCasesPanel(wx.Panel):
         """向日志窗口添加消息"""
         if self.log_content:
             self.log_content.AppendText(message + '\n')  # 在文本控件的末尾添加文本
+            logger.debug(message + '\n')
 
     def test_result(self, event):
 
@@ -431,121 +410,24 @@ class TestCasesPanel(wx.Panel):
         if not hasattr(self, 'CaseID') or not self.CaseID:
             wx.MessageBox('请先选择用例', 'Warning')
             return
-        action = self.actions_box.GetValue()
-        num_test = self.tests_box.GetValue()
-        if not action or not num_test:
-            wx.MessageBox('监控动作/测试次数不能为空', 'Warning')
-            return
+        action_and_num = http_manager.get_params(f'/get_case_actions_and_num/{self.CaseID}').get('actions_and_num')
         result = http_manager.get_params(f'/get_case_result/{self.CaseID}')
         if result.get('case_result'):
             wx.MessageBox('已有测试结果，请重置此条测试用例后再进行测试', 'Warning')
             return
         wx.CallAfter(self.case_disable)
         http_manager.post_data('/update_start_time',
-                               {'case_id': self.CaseID, 'actions': action, 'actions_num': num_test}, token=self.token)
+                               {'case_id': self.CaseID, 'actions': str(action_and_num)}, token=self.token)
         # 初始化终止信号
         self.patvs_monitor.stop_event = True
+        start_time = http_manager.get_start_time(self.CaseID)
         # 使用多线程异步运行，防止GUI界面卡死
-        if action == '时间':
-            while True:
-                dlg = wx.TextEntryDialog(self, '请输入需要测试的时间(in minutes):', '监控时间', '1')
-                if dlg.ShowModal() == wx.ID_OK:
-                    try:
-                        num_time = float(dlg.GetValue())
-                        if num_time > 0:
-                            num_time = num_time * 60  # 转换为秒
-                            break
-                        else:
-                            wx.MessageBox('请输入一个正数。', '输入错误', wx.OK | wx.ICON_ERROR)
-                    except ValueError:
-                        wx.MessageBox('请输入一个有效的正整数。', '输入错误', wx.OK | wx.ICON_ERROR)
-                else:
-                    wx.MessageBox('This input is required to proceed.', 'Input Required', wx.OK | wx.ICON_WARNING)
-            self.add_log_message(f"您选择的动作是: {action}，目标测试次数{num_test}，目标测试时间: {num_time}S")
-            thread = threading.Thread(target=self.patvs_monitor.monitor_time, args=(int(num_time), int(num_test),))
-            thread.setDaemon(True)
-            thread.start()
-        elif action == '电源插拔':
-            self.add_log_message(f"您选择的动作是: {action}，目标测试次数: {num_test}")
-            thread = threading.Thread(target=self.patvs_monitor.start_monitoring_power, args=(int(num_test),))
-            thread.setDaemon(True)
-            thread.start()
-        elif action == 'S3+电源插拔':
-            self.add_log_message(f"您选择的动作是: {action}，目标测试次数: {num_test}")
-            thread = threading.Thread(target=self.patvs_monitor.start_monitoring_s3_and_power, args=(int(num_test),))
-            thread.setDaemon(True)
-            thread.start()
-        elif action == 'S3':
-            self.add_log_message(f"您选择的动作是: {action}，目标测试次数: {num_test}")
-            start_time = http_manager.get_start_time(self.CaseID)
-            thread = threading.Thread(target=self.patvs_monitor.test_count_s3_sleep_events,
-                                      args=(str(start_time), int(num_test),))
-            thread.setDaemon(True)
-            thread.start()
-        elif action == 'S4':
-            self.add_log_message(f"您选择的动作是: {action}，目标测试次数: {num_test}")
-            start_time = http_manager.get_start_time(self.CaseID)
-            thread = threading.Thread(target=self.patvs_monitor.test_count_s4_sleep_events,
-                                      args=(str(start_time), int(num_test),))
-            thread.setDaemon(True)
-            thread.start()
-        elif action == 'S5':
-            self.add_log_message(f"您选择的动作是: {action}，目标测试次数: {num_test}")
-            start_time = http_manager.get_start_time(self.CaseID)
-            thread = threading.Thread(target=self.patvs_monitor.test_count_s5_sleep_events,
-                                      args=(str(start_time), int(num_test),))
-            thread.setDaemon(True)
-            thread.start()
-        elif action == 'Restart':
-            self.add_log_message(f"您选择的动作是: {action}，目标测试次数: {num_test}")
-            start_time = http_manager.get_start_time(self.CaseID)
-            logger.warning(type(start_time))
-            logger.warning(start_time)
-            thread = threading.Thread(target=self.patvs_monitor.test_count_restart_events,
-                                      args=(str(start_time), int(num_test),))
-            thread.setDaemon(True)
-            thread.start()
-        elif action == 'USB插拔':
-            self.add_log_message(f"您选择的动作是: {action}，目标测试次数: {num_test}")
-            msg_loop_thread = threading.Thread(target=self.patvs_monitor.monitor_device_plug_changes,
-                                               args=(int(num_test),))
-            msg_loop_thread.setDaemon(True)
-            msg_loop_thread.start()
-            # 获取线程ID
-            self.msg_loop_thread_id = msg_loop_thread.ident
+        thread = threading.Thread(target=self.patvs_monitor.run_main, args=(int(self.CaseID), list(action_and_num), str(start_time),))
+        thread.setDaemon(True)
+        thread.start()
+        # 获取线程ID
+        self.msg_loop_thread_id = thread.ident
 
-        # elif action == 'S3+USB插拔':
-        #     self.add_log_message(f"您选择的动作是: {action}，目标测试次数: {num_test}")
-        #     msg_loop_thread = threading.Thread(target=self.patvs_monitor.s3_and_device_plug_changes,
-        #                                        args=(int(num_test),))
-        #     msg_loop_thread.setDaemon(True)
-        #     msg_loop_thread.start()
-        #     # 获取线程ID
-        #     self.msg_loop_thread_id = msg_loop_thread.ident
-        elif action == '键盘按键':
-            self.add_log_message(f"您选择的动作是: {action}，目标测试次数: {num_test}")
-            msg_loop_thread = threading.Thread(target=self.patvs_monitor.monitor_keystrokes,
-                                               args=(int(num_test),))
-            msg_loop_thread.setDaemon(True)
-            msg_loop_thread.start()
-            # 获取线程ID
-            self.msg_loop_thread_id = msg_loop_thread.ident
-        elif action == '锁屏':
-            self.add_log_message(f"您选择的动作是: {action}，目标测试次数: {num_test}")
-            msg_loop_thread = threading.Thread(target=self.patvs_monitor.monitor_lock_screen_changes,
-                                               args=(int(num_test),))
-            msg_loop_thread.setDaemon(True)
-            msg_loop_thread.start()
-            # 获取线程ID
-            self.msg_loop_thread_id = msg_loop_thread.ident
-        elif action == '鼠标点击':
-            self.add_log_message(f"您选择的动作是: {action}，目标测试次数: {num_test}")
-            msg_loop_thread = threading.Thread(target=self.patvs_monitor.monitor_mouse_clicks,
-                                               args=(int(num_test),))
-            msg_loop_thread.setDaemon(True)
-            msg_loop_thread.start()
-            # 获取线程ID
-            self.msg_loop_thread_id = msg_loop_thread.ident
 
     def after_test(self):
         for button in self.result_buttons:
@@ -557,8 +439,6 @@ class TestCasesPanel(wx.Panel):
         case 执行状态按钮显示
         :return:
         """
-        self.tests_box.Disable()
-        self.actions_box.Disable()
         self.plan_name_combo.Disable()
         self.sheet_name_combo.Disable()
         self.tree.Disable()
@@ -575,8 +455,6 @@ class TestCasesPanel(wx.Panel):
         :return:
         """
         self.tree.Enable()
-        self.actions_box.Enable()
-        self.tests_box.Enable()
         self.plan_name_combo.Enable()
         self.sheet_name_combo.Enable()
         self.start_button.Show()
@@ -614,9 +492,9 @@ class TestCasesPanel(wx.Panel):
             pathname = fileDialog.GetPath()
             filename = os.path.basename(pathname)  # 获取文件名
             # 校验文件是否已存在
-            result = http_manager.get_params(f'/get_filename/{filename}')
-            logger.warning('file_exists:', result.get('file_exists'))
-            if result.get('file_exists'):
+            result = http_manager.get_params(f'/get_filename/{filename}').get('file_exists')
+            logger.warning(f'file_exists: {result}')
+            if result:
                 wx.MessageBox(f"当前文件已存在，请勿重复上传", "提示", wx.OK | wx.ICON_WARNING)
                 return
 
@@ -940,7 +818,8 @@ class TestCasesPanel(wx.Panel):
         # 获取节点的CaseID
         self.CaseID = self.tree.GetItemData(item)
         logger.info(f"You selected the case with ID: {self.CaseID}")
-
+        action_and_num = http_manager.get_params(f'/get_case_actions_and_num/{self.CaseID}').get('actions_and_num')
+        self.actions_and_num.SetLabel(f"监控动作: {action_and_num}")
         for case in self.testCases:
             if case[12] == self.CaseID:
                 self.content.Clear()
@@ -956,6 +835,7 @@ class TestCasesPanel(wx.Panel):
                 self.content.SetDefaultStyle(wx.TextAttr(wx.BLACK))
                 wx.CallAfter(self.scroll_to_top)  # 调用滚动方法
                 break
+
 
     def scroll_to_top(self):
         """

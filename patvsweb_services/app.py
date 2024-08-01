@@ -6,6 +6,7 @@ from functools import wraps
 import os
 import jwt
 import datetime
+import re
 
 app = Flask(__name__)
 app.config['SECRET_KEY'] = 'your_secret_key'
@@ -46,6 +47,7 @@ def token_required(f):
         except:
             return jsonify({'error': 'Token is invalid!'}), 403
         return f(*args, current_user=current_user, **kwargs)
+
     return decorated
 
 
@@ -55,16 +57,15 @@ def update_start_time(current_user):
     data = request.json
     case_id = data.get('case_id')
     actions = data.get('actions')
-    actions_num = data.get('actions_num')
-    logger.info(f"Updating start time for case_id: {case_id}, actions: {actions}, actions_num: {actions_num}")
-    if not case_id or not actions or not actions_num:
+    logger.info(f"Updating start time for case_id: {case_id}, actions: {actions}")
+    if not case_id or not actions:
         return jsonify({'error': 'Missing required parameters'}), 400
 
     conn = get_db_connection()
     cursor = conn.cursor()
     try:
         manager = TestCaseManager(conn, cursor)
-        manager.update_start_time_by_case_id(case_id, actions, actions_num)
+        manager.update_start_time_by_case_id(case_id, actions)
         conn.commit()
         return jsonify({'message': 'Start time updated successfully.'}), 200
     except Exception as e:
@@ -257,6 +258,23 @@ def get_filename(filename):
         manager = TestCaseManager(conn, cursor)
         file_exists = manager.select_filename_by_filename(filename)
         return jsonify({'file_exists': file_exists}), 200
+    except Exception as e:
+        logger.error(f"An error occurred: {e}")
+        return jsonify({'error': str(e)}), 500
+    finally:
+        cursor.close()
+        conn.close()
+
+
+@app.route('/get_plan_name_by_planname/<string:plan_name>', methods=['GET'])
+def get_plan_name_by_planname(plan_name):
+    logger.info(f"Fetching plan_name: {plan_name}")
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    try:
+        manager = TestCaseManager(conn, cursor)
+        plan_exists = manager.select_plan_name_by_plan_name(plan_name)
+        return jsonify({'plan_exists': plan_exists}), 200
     except Exception as e:
         logger.error(f"An error occurred: {e}")
         return jsonify({'error': str(e)}), 500
@@ -571,5 +589,35 @@ def get_tester():
         conn.close()
 
 
+@app.route('/get_case_actions_and_num/<int:case_id>', methods=['GET'])
+def get_case_actions_and_num(case_id):
+    logger.info(f"get_case_actions_and_num case_id: {case_id} ")
+
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    try:
+        manager = TestCaseManager(conn, cursor)
+        title = manager.select_case_title(case_id)
+        logger.info(title)
+        # "[S3+5][S4+6][S5+3]N5(03)BT Pairing multi devices BT多设备配对"
+        # 提取[]括号内的内容
+        bracket_contents = re.findall(r'\[([^\]]+)\]', title)
+        logger.warning(bracket_contents)
+        # 提取关键参数
+        key_params = []
+        for content in bracket_contents:
+            matches = re.match(r'(\w+)\+(\d+)', content)
+            if matches:
+                key_params.append((matches.group(1), matches.group(2)))
+        logger.warning(key_params)
+        return jsonify({'actions_and_num': key_params}), 200
+    except Exception as e:
+        logger.error(f"An error occurred: {e}")
+        return jsonify({'error': str(e)}), 500
+    finally:
+        cursor.close()
+        conn.close()
+
+
 if __name__ == '__main__':
-    app.run(debug=True, host='127.0.0.1', port=80)
+    app.run(debug=True, host='10.184.32.52', port=80)
