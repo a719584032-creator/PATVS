@@ -24,7 +24,9 @@
     <last-used-providers />
   </component>
   <component name="DBNavigator.Project.DatabaseFileManager">
-    <open-files />
+    <open-files>
+      <object connection-id="b505d553-7b7f-42d8-9e03-1155003dc147" object-ref="schemas/lenovoDb/tables/TestCase" />
+    </open-files>
   </component>
   <component name="DBNavigator.Project.DatabaseSessionManager">
     <connection id="b505d553-7b7f-42d8-9e03-1155003dc147" />
@@ -37,7 +39,11 @@
       </filter>
     </filter-actions>
     <filter-actions connection-id="b505d553-7b7f-42d8-9e03-1155003dc147" dataset="lenovoDb.Student" active-filter-id="EMPTY_FILTER" />
-    <filter-actions connection-id="b505d553-7b7f-42d8-9e03-1155003dc147" dataset="lenovoDb.TestCase" active-filter-id="EMPTY_FILTER" />
+    <filter-actions connection-id="b505d553-7b7f-42d8-9e03-1155003dc147" dataset="lenovoDb.TestCase" active-filter-id="e817cbf1-713a-4595-b293-4a6f348fd182">
+      <filter id="e817cbf1-713a-4595-b293-4a6f348fd182" name="3251" temporary="false" custom-name="false" type="basic" join-type="AND">
+        <condition column="CaseID" operator="=" value="3251" active="true" />
+      </filter>
+    </filter-actions>
     <filter-actions connection-id="b505d553-7b7f-42d8-9e03-1155003dc147" dataset="lenovoDb.TestFile" active-filter-id="EMPTY_FILTER" />
   </component>
   <component name="DBNavigator.Project.ObjectQuickFilterManager">

@@ -54,7 +54,7 @@ class HttpRequestManager:
             raise
 
     def update_end_time_case_id(self, case_id, case_result, input_content=None, token=None):
-        data = {'case_id': case_id, 'case_result': case_result, 'input_content': input_content}
+        data = {'case_id': case_id, 'case_result': case_result, 'comment': input_content}
         try:
             headers = {'x-access-tokens': token}
             response = requests.post(f'{self.base_url}/update_end_time', json=data, headers=headers)

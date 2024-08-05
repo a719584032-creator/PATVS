@@ -161,6 +161,25 @@ def get_cases(sheet_id):
         conn.close()
 
 
+@app.route('/get_comments', methods=['POST'])
+def get_comments_for_case():
+    data = request.json
+    case_ids = data.get('case_ids')
+    logger.info(f"Fetching cases for case_ids: {case_ids}")
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    try:
+        manager = TestCaseManager(conn, cursor)
+        comments = manager.select_all_comments(case_ids)
+        return jsonify({'comments': comments}), 200
+    except Exception as e:
+        logger.error(f"An error occurred: {e}")
+        return jsonify({'error': str(e)}), 500
+    finally:
+        cursor.close()
+        conn.close()
+
+
 @app.route('/get_plan_names/<string:username>', methods=['GET'])
 def get_plan_names(username):
     logger.info(f"Fetching plan names for username: {username}")

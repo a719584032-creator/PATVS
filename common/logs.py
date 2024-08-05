@@ -56,14 +56,14 @@ class Log(object):
                     "format": "<green>{time:YYYY-MM-DD HH:mm:ss.SSS}</green> | "
                               "<level>[{level}]</level> | "
                               "<cyan>{name}</cyan>:<cyan>{function}</cyan>:<cyan>{line}</cyan> - <level>{message}</level>",
-                    "level": "INFO"
+                    "level": "DEBUG"
                 })
             else:
                 # 如果不在控制台，在GUI运行时，仅将日志输出到文件
                 cls._config["handlers"].append({
                     "sink": f"{directory}/patvs.log",  # 确保文件路径是正确的
                     "serialize": False,
-                    "level": "INFO",
+                    "level": "DEBUG",
                     "retention": "10 days",
                     "rotation": "1 day",
                 })

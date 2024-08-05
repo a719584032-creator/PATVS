@@ -34,17 +34,55 @@ class TestCaseManager:
     def update_end_time_case_id(self, case_id, case_result, comment=None):
         self.cursor.execute(f'SELECT StartTime FROM TestCase where CaseID = %s', (case_id,))
         result = self.cursor.fetchone()
-        # logger.info(result)
-        # logger.info(type(result))
-        # execution_time = datetime.strptime(result[0], "%Y-%m-%d %H:%M:%S")
+
         now = datetime.now()
         test_time = int((now - result[0]).total_seconds())
         logger.info(f"测试消耗时间是 {test_time}")
         formatted_now = now.strftime('%Y-%m-%d %H:%M:%S')
-        comment = comment or None  # 如果comment为空，则将其设为None
+        # 更新测试结果
         self.cursor.execute(
-            "UPDATE TestCase SET EndTime = %s, TestTime = %s, TestResult = %s, comment = %s WHERE CaseID = %s",
-            (formatted_now, test_time, case_result, comment, case_id))
+            "UPDATE TestCase SET EndTime = %s, TestTime = %s, TestResult = %s WHERE CaseID = %s",
+            (formatted_now, test_time, case_result, case_id)
+        )
+        # 插入评论
+        if comment:
+            logger.warning("开始插入评论................................")
+            self.cursor.execute(
+                "INSERT INTO TestCaseComments (CaseID, Comment, CommentTime) VALUES (%s, %s, %s)",
+                (case_id, comment, formatted_now)
+            )
+            logger.warning("插入结束................................")
+
+    def select_comments_for_case(self, case_id):
+        self.cursor.execute(
+            "SELECT Comment, CommentTime FROM TestCaseComments WHERE CaseID = %s ORDER BY CommentTime ASC",
+            (case_id,)
+        )
+        comments = self.cursor.fetchall()
+        formatted_comments = "\n".join(f"{comment_time}: {comment}" for comment, comment_time in comments)
+        return formatted_comments
+
+    def select_all_comments(self, case_ids):
+        # Fetch all comments for the provided list of case IDs
+        format_strings = ','.join(['%s'] * len(case_ids))
+        self.cursor.execute(
+            f"SELECT CaseID, Comment, CommentTime FROM TestCaseComments WHERE CaseID IN ({format_strings}) ORDER BY CommentTime ASC",
+            tuple(case_ids)
+        )
+        comments_data = self.cursor.fetchall()
+
+        # Organize comments by CaseID
+        comments_map = {}
+        for case_id, comment, comment_time in comments_data:
+            if case_id not in comments_map:
+                comments_map[case_id] = []
+            comments_map[case_id].append(f"{comment_time}: {comment}")
+
+        # Convert lists of comments to concatenated strings
+        for case_id in comments_map:
+            comments_map[case_id] = "\n".join(comments_map[case_id])
+
+        return comments_map
 
     def insert_case_by_filename(self, plan_name, project_name, sheet_name, tester, workloading, filename, cases,
                                 model_name):

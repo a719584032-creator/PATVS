@@ -202,7 +202,7 @@ class TestCasesPanel(wx.Panel):
         mainSizer.Add(self.splitter, 1, wx.EXPAND)
 
         actionSizer.Add(self.actions_and_num, 0, wx.ALIGN_CENTER_VERTICAL | wx.ALL, 5)
-        actionSizer.AddSpacer(100)  # 添加伸缩控件
+        actionSizer.AddSpacer(250)  # 添加伸缩控件
 
         # 创建底部布局，将下拉框和按钮放在右侧
         bottomSizer = wx.BoxSizer(wx.HORIZONTAL)
@@ -399,6 +399,12 @@ class TestCasesPanel(wx.Panel):
                         logger.warning(f"{e}")
                     except:
                         pass
+                    try:
+                        win32api.PostThreadMessage(self.patvs_monitor.msg_loop_thread_id, win32con.WM_QUIT, 0, 0)
+                    except pywintypes.error as e:
+                        logger.warning(f"{e}")
+                    except:
+                        pass
                 else:
                     wx.MessageDialog(self, '内容不能为空，请重新输入!', '错误', style=wx.OK | wx.ICON_ERROR).ShowModal()
             dlg.Destroy()
@@ -411,6 +417,10 @@ class TestCasesPanel(wx.Panel):
             wx.MessageBox('请先选择用例', 'Warning')
             return
         action_and_num = http_manager.get_params(f'/get_case_actions_and_num/{self.CaseID}').get('actions_and_num')
+        logger.warning(action_and_num)
+        if not action_and_num:
+            wx.MessageBox('未检测到任何匹配项，请按照规则修改用例标题后再测试', 'Warning')
+            return
         result = http_manager.get_params(f'/get_case_result/{self.CaseID}')
         if result.get('case_result'):
             wx.MessageBox('已有测试结果，请重置此条测试用例后再进行测试', 'Warning')
@@ -522,21 +532,10 @@ class TestCasesPanel(wx.Panel):
                 self.plan_name_combo.Clear()
                 self.sheet_name_combo.Clear()  # 先清除之前的选项
                 self.plan_name_combo.AppendItems(all_plans)  # 添加新的选项
-                # plan_name = self.sql.select_plan_name_by_filename(filename)
-                # if plan_name:
-                #     self.plan_name_combo.SetValue(plan_name)
-                #     self.on_plan_select(None)  # 自动加载 test_sheet
-
                 self.plan_name_combo.SetValue(all_plans[0])
                 self.on_plan_select(None)  # 自动加载 test_sheet
 
             wx.CallAfter(complete_upload)
-
-            # self.sheet_name_combo.SetValue(self.sheet_name)
-            # self.sheet_name_combo.SetValue(self.sheet_name)
-            # self.testCases = self.PopulateTree(self.sheet_name)
-            # # 使用 partial可以提前填充一个参数，得到一个只需要一个参数的新函数
-            # self.tree.Bind(wx.EVT_TREE_SEL_CHANGED, self.OnSelChanged)
 
     def open_device_manager(self, event):
         """
@@ -615,13 +614,22 @@ class TestCasesPanel(wx.Panel):
         for i, title in enumerate(cols_title):
             self.grid.SetColLabelValue(i, title)
 
+        case_ids = [case[-2] for case in all_case]
+        comments_map = http_manager.post_data(f'/get_comments', {'case_ids': case_ids}, token=self.token).get('comments')
+        logger.warning(comments_map)
+        logger.warning(comments_map.get('3336'))
+        logger.warning(comments_map.get(3336))
         # 填充数据
         self.case_row_to_id = {}
         for i, case in enumerate(all_case):
             self.case_row_to_id[i] = case[-2]  # 赋值ID为重置按钮使用
+            case_id = str(case[-2])
             for j, item in enumerate(case[:-2]):  # 排除ID等敏感数据
-
-                self.grid.SetCellValue(i, j, str(item))  # 第i行，第j列，数据
+                if cols_title[j] == '评论':
+                    comments = comments_map.get(case_id, "")
+                    self.grid.SetCellValue(i, j, str(comments))
+                else:
+                    self.grid.SetCellValue(i, j, str(item))  # 第i行，第j列，数据
                 # 检查测试结果列，设置背景颜色
                 if cols_title[j] == '测试结果':
                     if item == 'Pass':
