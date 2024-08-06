@@ -2,16 +2,18 @@
 # 负责主界面展示
 import wx
 from ui_manager.patvs_ui_manager import TestCasesPanel
-from common.tools import Public
+from ui_manager.patvs_admin_ui_manager import TestAdminPanel
 from common.logs import logger
 import sys
 import os
-import win32api
-from sql_manager.patvs_sql import Patvs_SQL
+from requests_manager.http_requests_manager import http_manager
 import json
-import hashlib
 import base64
 
+directory = "D:\\PATVS"
+if not os.path.exists(directory):
+    os.makedirs(directory)
+file_dir = directory + '/credentials.json'
 
 def resource_path(relative_path):
     """ Get absolute path to resource, works for dev and for PyInstaller """
@@ -22,7 +24,6 @@ def resource_path(relative_path):
 class LoginDialog(wx.Dialog):
     def __init__(self, parent, title):
         super(LoginDialog, self).__init__(parent, title=title, size=(1000, 700))
-        self.sql = Patvs_SQL()  # 连接到数据库
         self.panel = wx.Panel(self)
         self.sizer = wx.BoxSizer(wx.VERTICAL)
 
@@ -50,6 +51,7 @@ class LoginDialog(wx.Dialog):
 
         self.panel.SetSizerAndFit(self.sizer)
         self.Centre()
+        self.token = None
         self.logged_in_username = None
         self.logged_in_role = None
         self.stored_password_hash = ""
@@ -57,8 +59,9 @@ class LoginDialog(wx.Dialog):
         self.load_saved_credentials()
 
     def load_saved_credentials(self):
-        if os.path.exists('credentials.json'):
-            with open('credentials.json', 'r') as file:
+
+        if os.path.exists(file_dir):
+            with open(file_dir, 'r') as file:
                 data = json.load(file)
                 self.username_text.SetValue(data.get('username', ''))
                 self.stored_password_hash = data.get('password', '')
@@ -74,30 +77,36 @@ class LoginDialog(wx.Dialog):
 
     def save_credentials(self, username, password):
         hashed_password = self.encrypt_password(password)
-        with open('credentials.json', 'w') as file:
+        with open(file_dir, 'w') as file:
             json.dump({'username': username, 'password': hashed_password}, file)
 
     def clear_credentials(self):
-        if os.path.exists('credentials.json'):
-            os.remove('credentials.json')
+        if os.path.exists(file_dir):
+            os.remove(file_dir)
 
     def on_login(self, event):
         username = self.username_text.GetValue()
         password = self.password_text.GetValue()
+        try:
+            # 校验用户凭证
+            pamars = {'username': username, 'password': password}
+            data = http_manager.post_data(f'/login', data=pamars)
+            role = data.get('role', None)
 
-        # 校验用户凭证
-        valid, role = self.sql.validate_user(username, password)
-        if valid:
-            if self.remember_me_checkbox.GetValue():
-                self.save_credentials(username, password)
+            if 'token' in data:
+                self.token = data['token']
+                if self.remember_me_checkbox.GetValue():
+                    self.save_credentials(username, password)
+                else:
+                    self.clear_credentials()
+
+                self.logged_in_username = username  # 记录登录后的用户名
+                self.logged_in_role = role  # 记录登录后的用户角色
+                self.EndModal(wx.ID_OK)
             else:
-                self.clear_credentials()
-
-            self.logged_in_username = username  # 记录登录后的用户名
-            self.logged_in_role = role  # 记录登录后的用户角色
-            self.EndModal(wx.ID_OK)
-        else:
-            wx.MessageBox("Invalid username or password", "Error", wx.OK | wx.ICON_ERROR)
+                wx.MessageBox("Invalid username or password", "Error", wx.OK | wx.ICON_ERROR)
+        except Exception as e:
+            wx.MessageBox(f'未知错误: {str(e)}', 'Error', wx.OK | wx.ICON_ERROR)
 
     def on_change_password(self, event):
         dialog = ChangePasswordDialog(self)
@@ -108,7 +117,6 @@ class LoginDialog(wx.Dialog):
 class ChangePasswordDialog(wx.Dialog):
     def __init__(self, parent):
         super(ChangePasswordDialog, self).__init__(parent, title="Change Password", size=(1000, 700))
-        self.sql = Patvs_SQL()  # 连接到数据库
         self.panel = wx.Panel(self)
         self.sizer = wx.BoxSizer(wx.VERTICAL)
 
@@ -149,12 +157,21 @@ class ChangePasswordDialog(wx.Dialog):
         if new_password != confirm_password:
             wx.MessageBox("New passwords do not match", "Error", wx.OK | wx.ICON_ERROR)
             return
-
-        if self.sql.change_user_password(username, old_password, new_password):
-            wx.MessageBox("Password changed successfully", "Success", wx.OK | wx.ICON_INFORMATION)
-            self.EndModal(wx.ID_OK)
-        else:
-            wx.MessageBox("Invalid username or old password", "Error", wx.OK | wx.ICON_ERROR)
+        json_data = {
+            'username': username,
+            'old_password': old_password,
+            'new_password': new_password
+        }
+        try:
+            data = http_manager.post_data(f'/change_user_password', json_data)
+            logger.warning(data.get('result'))
+            if data.get('result'):
+                wx.MessageBox("Password changed successfully", "Success", wx.OK | wx.ICON_INFORMATION)
+                self.EndModal(wx.ID_OK)
+            else:
+                wx.MessageBox("Invalid username or old password", "Error", wx.OK | wx.ICON_ERROR)
+        except Exception as e:
+            wx.MessageBox(f'未知错误: {str(e)}', 'Error', wx.OK | wx.ICON_ERROR)
 
 
 class MainApp(wx.App):
@@ -162,12 +179,13 @@ class MainApp(wx.App):
         login_dialog = LoginDialog(None, title="PATVS-测试管理系统")
         if login_dialog.ShowModal() == wx.ID_OK:
             username = login_dialog.logged_in_username
+            token = login_dialog.token
             role = login_dialog.logged_in_role  # 获取用户角色
 
             if role == 'admin':
-                frame = AdminWindow(None, title="PATVS-Admin", username=username)
+                frame = AdminWindow(None, title="PATVS-Admin", token=token)
             else:
-                frame = MainWindow(None, title="PATVS-1.0.0.8", username=username)
+                frame = MainWindow(None, title="PATVS-1.0.0.8", username=username, token=token)
 
             self.SetTopWindow(frame)
             frame.Show(True)
@@ -181,11 +199,11 @@ class MainApp(wx.App):
 
 
 class MainWindow(wx.Frame):
-    def __init__(self, parent, title, username):
+    def __init__(self, parent, title, username, token):
         super(MainWindow, self).__init__(parent, title=title, size=(1000, 700))
 
-        # 添加 TestCasesPanel
-        self.panel = TestCasesPanel(self, username)
+        # tester 的界面逻辑
+        self.panel = TestCasesPanel(self, username, token)
 
         # 设置图标
         if getattr(sys, 'frozen', False):
@@ -205,16 +223,11 @@ class MainWindow(wx.Frame):
 
 
 class AdminWindow(wx.Frame):
-    def __init__(self, parent, title, username):
+    def __init__(self, parent, title, token):
         super(AdminWindow, self).__init__(parent, title=title, size=(1000, 700))
 
-        # 在这里添加Admin用户的界面逻辑
-        self.panel = wx.Panel(self)
-
-        sizer = wx.BoxSizer(wx.VERTICAL)
-        welcome_text = wx.StaticText(self.panel, label=f"Welcome, {username} (Admin)")
-        sizer.Add(welcome_text, 0, wx.ALL | wx.CENTER, 5)
-        self.panel.SetSizer(sizer)
+        # Admin用户的界面逻辑
+        self.panel = TestAdminPanel(self, token)
 
         # 设置图标
         if getattr(sys, 'frozen', False):

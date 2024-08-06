@@ -1,0 +1,11 @@
+{
+    "development": {
+        "base_url": "http://127.0.0.1"
+    },
+    "testing": {
+        "base_url": "http://test-api.example.com"
+    },
+    "production": {
+        "base_url": "http://api.example.com"
+    }
+}

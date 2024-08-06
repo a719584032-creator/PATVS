@@ -58,7 +58,6 @@ class SessionNotificationHandler:
         return win32gui.DefWindowProc(hwnd, msg, wparam, lparam)
 
     def run(self):
-        logger.info("Monitoring session lock/unlock events...")
         wx.CallAfter(self.window.add_log_message, "Monitoring session lock/unlock events...")
         try:
             win32gui.PumpMessages()
@@ -68,6 +67,8 @@ class SessionNotificationHandler:
             win32ts.WTSUnRegisterSessionNotification(self.hwnd)
             win32gui.DestroyWindow(self.hwnd)
             win32gui.UnregisterClass(self.class_atom, None)
+        except Exception as e:
+            logger.error(f"未知错误 {e}")
 
 
 def monitor_locks(target_cycles, window):

@@ -33,12 +33,6 @@ class Notification:
         wc.lpszClassName = self.class_name  # 使用唯一的类名
         wc.style = win32con.CS_VREDRAW | win32con.CS_HREDRAW
         wc.lpfnWndProc = message_map
-        # 如果类已注册, 忽略错误，获取已注册的类
-        # try:
-        #     win32gui.RegisterClass(wc)
-        # except pywintypes.error as e:
-        #     if e.winerror != winerror.ERROR_CLASS_ALREADY_EXISTS:
-        #         raise
         win32gui.RegisterClass(wc)  # 由于类名唯一，所以不需要捕获错误
 
         style = win32con.WS_OVERLAPPED | win32con.WS_SYSMENU
