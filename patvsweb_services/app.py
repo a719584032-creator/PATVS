@@ -9,7 +9,7 @@ import datetime
 import re
 
 app = Flask(__name__)
-app.config['SECRET_KEY'] = 'your_secret_key'
+app.config['SECRET_KEY'] = 'lenovo_secret_key'
 # 数据库配置
 DB_CONFIG = {
     'host': os.getenv('DB_HOST'),
@@ -19,13 +19,7 @@ DB_CONFIG = {
     'buffered': True
 }
 
-# DB_CONFIG = {
-#     'host': 'rm-cn-lf63r60vh0003gto.rwlb.rds.aliyuncs.com',
-#     'user': 'yesq3_lenovo',
-#     'password': 'patvs_Lenovo',
-#     'database': 'lenovoDb',
-#     'buffered': True
-# }
+
 logger.warning(os.getenv('DB_HOST'))
 db_pool = MySQLConnectionPool(pool_name="mypool", pool_size=10, **DB_CONFIG)
 
