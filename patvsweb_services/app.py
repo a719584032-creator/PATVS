@@ -1,9 +1,11 @@
+import sys
+import os
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 from flask import Flask, request, jsonify
 from common.logs import logger
 from mysql.connector.pooling import MySQLConnectionPool
 from patvsweb_services.sql_manager import TestCaseManager
 from functools import wraps
-import os
 import jwt
 import datetime
 import re
@@ -11,15 +13,22 @@ import re
 app = Flask(__name__)
 app.config['SECRET_KEY'] = 'lenovo_secret_key'
 # 数据库配置
+# DB_CONFIG = {
+#     'host': os.getenv('DB_HOST'),
+#     'user': os.getenv('DB_USER'),
+#     'password': os.getenv('DB_PASSWORD'),
+#     'database': os.getenv('DB_DATABASE'),
+#     'buffered': True
+# }
+
+
 DB_CONFIG = {
-    'host': os.getenv('DB_HOST'),
-    'user': os.getenv('DB_USER'),
-    'password': os.getenv('DB_PASSWORD'),
-    'database': os.getenv('DB_DATABASE'),
+    'host': '10.196.155.148',
+    'user': 'a_appconnect',
+    'password': 'dHt6BGB4Zxi^',
+    'database': 'patvs_db',
     'buffered': True
 }
-
-
 logger.warning(os.getenv('DB_HOST'))
 db_pool = MySQLConnectionPool(pool_name="mypool", pool_size=10, **DB_CONFIG)
 
@@ -619,7 +628,7 @@ def get_case_actions_and_num(case_id):
         # 提取关键参数
         key_params = []
         for content in bracket_contents:
-            matches = re.match(r'(\w+)\+(\d+)', content)
+            matches = re.match(r'(.+?)\+(\d+)', content)
             if matches:
                 key_params.append((matches.group(1), matches.group(2)))
         logger.warning(key_params)

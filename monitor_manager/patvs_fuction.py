@@ -27,6 +27,110 @@ import win32api
 class Patvs_Fuction():
     TEMP_FILE = r"D:\PATVS\temp_action_and_num.json"
     ENCRYPTION_KEY = b'JZfpG9N5K4PQoQMtImxPv80DS-D-WPXr9DN0eF7zhR4='  # 32 bytes URL-safe base64-encoded key
+    # 定义按键映射字典，将用户友好的名称映射到 pynput 的按键
+    KEY_MAPPING = {
+        'alt': keyboard.Key.alt,
+        'alt_l': keyboard.Key.alt_l,
+        'alt_r': keyboard.Key.alt_r,
+        'alt_gr': keyboard.Key.alt_gr,
+        'backspace': keyboard.Key.backspace,
+        'caps_lock': keyboard.Key.caps_lock,
+        'cmd': keyboard.Key.cmd,
+        'cmd_l': keyboard.Key.cmd_l,
+        'cmd_r': keyboard.Key.cmd_r,
+        'ctrl': keyboard.Key.ctrl,
+        'ctrl_l': keyboard.Key.ctrl_l,
+        'ctrl_r': keyboard.Key.ctrl_r,
+        'delete': keyboard.Key.delete,
+        'down': keyboard.Key.down,
+        'end': keyboard.Key.end,
+        'enter': keyboard.Key.enter,
+        'esc': keyboard.Key.esc,
+        'f1': keyboard.Key.f1,
+        'f2': keyboard.Key.f2,
+        'f3': keyboard.Key.f3,
+        'f4': keyboard.Key.f4,
+        'f5': keyboard.Key.f5,
+        'f6': keyboard.Key.f6,
+        'f7': keyboard.Key.f7,
+        'f8': keyboard.Key.f8,
+        'f9': keyboard.Key.f9,
+        'f10': keyboard.Key.f10,
+        'f11': keyboard.Key.f11,
+        'f12': keyboard.Key.f12,
+        'f13': keyboard.Key.f13,
+        'f14': keyboard.Key.f14,
+        'f15': keyboard.Key.f15,
+        'home': keyboard.Key.home,
+        'left': keyboard.Key.left,
+        'page_down': keyboard.Key.page_down,
+        'page_up': keyboard.Key.page_up,
+        'right': keyboard.Key.right,
+        'shift': keyboard.Key.shift,
+        'shift_l': keyboard.Key.shift_l,
+        'shift_r': keyboard.Key.shift_r,
+        'space': keyboard.Key.space,
+        'tab': keyboard.Key.tab,
+        'up': keyboard.Key.up,
+        'media_play_pause': keyboard.Key.media_play_pause,
+        'media_volume_mute': keyboard.Key.media_volume_mute,
+        'media_volume_down': keyboard.Key.media_volume_down,
+        'media_volume_up': keyboard.Key.media_volume_up,
+        'media_previous': keyboard.Key.media_previous,
+        'media_next': keyboard.Key.media_next,
+        'insert': keyboard.Key.insert,
+        'menu': keyboard.Key.menu,
+        'num_lock': keyboard.Key.num_lock,
+        'pause': keyboard.Key.pause,
+        'prtsc': keyboard.Key.print_screen,
+        'scrlk': keyboard.Key.scroll_lock,
+        'a': keyboard.KeyCode.from_char('a'),
+        'b': keyboard.KeyCode.from_char('b'),
+        'c': keyboard.KeyCode.from_char('c'),
+        'd': keyboard.KeyCode.from_char('d'),
+        'e': keyboard.KeyCode.from_char('e'),
+        'f': keyboard.KeyCode.from_char('f'),
+        'g': keyboard.KeyCode.from_char('g'),
+        'h': keyboard.KeyCode.from_char('h'),
+        'i': keyboard.KeyCode.from_char('i'),
+        'j': keyboard.KeyCode.from_char('j'),
+        'k': keyboard.KeyCode.from_char('k'),
+        'l': keyboard.KeyCode.from_char('l'),
+        'm': keyboard.KeyCode.from_char('m'),
+        'n': keyboard.KeyCode.from_char('n'),
+        'o': keyboard.KeyCode.from_char('o'),
+        'p': keyboard.KeyCode.from_char('p'),
+        'q': keyboard.KeyCode.from_char('q'),
+        'r': keyboard.KeyCode.from_char('r'),
+        's': keyboard.KeyCode.from_char('s'),
+        't': keyboard.KeyCode.from_char('t'),
+        'u': keyboard.KeyCode.from_char('u'),
+        'v': keyboard.KeyCode.from_char('v'),
+        'w': keyboard.KeyCode.from_char('w'),
+        'x': keyboard.KeyCode.from_char('x'),
+        'y': keyboard.KeyCode.from_char('y'),
+        'z': keyboard.KeyCode.from_char('z'),
+        '`': keyboard.KeyCode.from_char('`'),
+        '1': keyboard.KeyCode.from_char('1'),
+        '2': keyboard.KeyCode.from_char('2'),
+        '3': keyboard.KeyCode.from_char('3'),
+        '4': keyboard.KeyCode.from_char('4'),
+        '5': keyboard.KeyCode.from_char('5'),
+        '6': keyboard.KeyCode.from_char('6'),
+        '7': keyboard.KeyCode.from_char('7'),
+        '8': keyboard.KeyCode.from_char('8'),
+        '9': keyboard.KeyCode.from_char('9'),
+        '0': keyboard.KeyCode.from_char('0'),
+        '-': keyboard.KeyCode.from_char('-'),
+        '=': keyboard.KeyCode.from_char('='),
+        '[': keyboard.KeyCode.from_char('['),
+        ']': keyboard.KeyCode.from_char(']'),
+        '\\': keyboard.KeyCode.from_char('\\'),  # 单反斜杠
+        ';': keyboard.KeyCode.from_char(';'),
+        ',': keyboard.KeyCode.from_char(','),
+        '.': keyboard.KeyCode.from_char('.'),
+        '/': keyboard.KeyCode.from_char('/')
+    }
 
     def __init__(self, window, stop_event):
         self.window = window
@@ -186,15 +290,15 @@ class Patvs_Fuction():
             while self.stop_event:
                 events = win32evtlog.ReadEventLog(hand, flags, 0)
                 if not events:
-                    # 重新打开句柄获取监控开始后产生的新S4日志
+                    # 重新打开句柄获取增量日志
                     hand = win32evtlog.OpenEventLog(None, "System")
                     log_num = total
                     total = 0
                     time.sleep(3)
                 for event in events:
                     if event.EventID == 1:
-                        event_data = self.get_event_data(event)
                         # 解析 EventData 获取 SleepTime 和 WakeTime
+                        event_data = self.get_event_data(event)
                         sleep_time = None
                         wake_time = None
                         for line in event_data.split('\n'):
@@ -206,8 +310,7 @@ class Patvs_Fuction():
                         if sleep_time and wake_time:
                             if sleep_time > start_time and wake_time > sleep_time:
                                 total += 1
-                                # 仅输出增量日志
-                                if total > log_num:
+                                if total > log_num:  # 仅输出增量日志
                                     wx.CallAfter(self.window.add_log_message,
                                                  f"当前已测试 {total} 次，目标次数为 {target_cycles} 次。")
                                     wx.CallAfter(self.window.add_log_message,
@@ -326,20 +429,19 @@ class Patvs_Fuction():
         monitor_locks(target_cycles, self.window)
         self.action_complete.set()  # 设置动作完成状态
 
-    def monitor_keystrokes(self, target_cycles):
+    def monitor_keystrokes(self, target_cycles, key_name=None):
         try:
             key_count = 0
+            key = self.KEY_MAPPING.get(key_name.lower()) if key_name else None
 
-            def on_press(key):
+            def on_press(pressed_key):
                 nonlocal key_count
-                key_count += 1
-                message = (f"Key pressed: {key}. Total count: {key_count}")
-                wx.CallAfter(self.window.add_log_message, message)
+                if key is None or pressed_key == key:
+                    key_count += 1
+                    wx.CallAfter(self.window.add_log_message, f"Key pressed: {key}. Total count: {key_count}")
                 if key_count >= target_cycles or not self.stop_event:
-                    message = ("Reached target keystroke count. Exiting...")
-                    wx.CallAfter(self.window.add_log_message, message)
+                    wx.CallAfter(self.window.add_log_message, "Reached target keystroke count. Exiting...")
                     return False  # Stop the listener
-
             # Collect events until the target keystroke count is reached
             with keyboard.Listener(on_press=on_press) as listener:
                 listener.join()
@@ -425,7 +527,7 @@ class Patvs_Fuction():
             self.save_remaining_actions()
             # 清除上一个动作的完成状态
             self.action_complete.clear()
-            if action == '时间':
+            if '时间' in action:
                 wx.CallAfter(self.window.add_log_message, f"开始执行监控时间，目标测试时间: {test_num} min")
                 threading.Thread(target=self.monitor_time, args=(test_num,)).start()
             elif action == '电源插拔':
@@ -461,7 +563,9 @@ class Patvs_Fuction():
             elif action == 'restart':
                 wx.CallAfter(self.window.add_log_message, f"开始执行监控: {action}，目标测试次数: {test_num}")
                 threading.Thread(target=self.test_count_restart_events, args=(start_time, test_num,)).start()
-
+            elif self.KEY_MAPPING.get(action.lower()):
+                wx.CallAfter(self.window.add_log_message, f"开始执行监控按键: {action}，目标测试次数: {test_num}")
+                threading.Thread(target=self.monitor_keystrokes, args=(test_num, action,)).start()
             # 等待当前监控动作完成
             self.action_complete.wait()
             wx.CallAfter(self.window.add_log_message, f"动作 {action} 完成")

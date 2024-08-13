@@ -97,5 +97,6 @@ def load_config(env):
 # config = load_config(ENV)
 # # 配置管理类实例
 # base_url = config.get('base_url')
-base_url = 'http://10.184.32.52'
+#base_url = 'http://10.184.32.52'
+base_url = 'http://10.184.44.87'
 http_manager = HttpRequestManager(base_url)
