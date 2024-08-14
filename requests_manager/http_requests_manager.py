@@ -82,7 +82,7 @@ class HttpRequestManager:
             response = requests.get(f'{self.base_url}/get_cases/{sheet_id}', headers=headers)
             response.raise_for_status()
             data = response.json()
-            return data.get('cases')
+            return data
         except requests.RequestException as e:
             logger.error(f'HTTP GET request to /get_cases failed: {e}')
             raise
@@ -98,4 +98,5 @@ def load_config(env):
 # # 配置管理类实例
 # base_url = config.get('base_url')
 base_url = 'http://10.184.32.52'
+#base_url = 'http://10.184.44.87'
 http_manager = HttpRequestManager(base_url)

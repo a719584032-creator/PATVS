@@ -56,7 +56,7 @@ class Log(object):
                     "format": "<green>{time:YYYY-MM-DD HH:mm:ss.SSS}</green> | "
                               "<level>[{level}]</level> | "
                               "<cyan>{name}</cyan>:<cyan>{function}</cyan>:<cyan>{line}</cyan> - <level>{message}</level>",
-                    "level": "DEBUG"
+                    "level": "INFO"
                 })
             else:
                 # 如果不在控制台，在GUI运行时，仅将日志输出到文件
