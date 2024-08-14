@@ -13,22 +13,22 @@ import re
 app = Flask(__name__)
 app.config['SECRET_KEY'] = 'lenovo_secret_key'
 # 数据库配置
-# DB_CONFIG = {
-#     'host': os.getenv('DB_HOST'),
-#     'user': os.getenv('DB_USER'),
-#     'password': os.getenv('DB_PASSWORD'),
-#     'database': os.getenv('DB_DATABASE'),
-#     'buffered': True
-# }
-
-
 DB_CONFIG = {
-    'host': '10.196.155.148',
-    'user': 'a_appconnect',
-    'password': 'dHt6BGB4Zxi^',
-    'database': 'patvs_db',
+    'host': os.getenv('DB_HOST'),
+    'user': os.getenv('DB_USER'),
+    'password': os.getenv('DB_PASSWORD'),
+    'database': os.getenv('DB_DATABASE'),
     'buffered': True
 }
+
+
+# DB_CONFIG = {
+#     'host': '10.196.155.148',
+#     'user': 'a_appconnect',
+#     'password': 'dHt6BGB4Zxi^',
+#     'database': 'patvs_db',
+#     'buffered': True
+# }
 logger.warning(os.getenv('DB_HOST'))
 db_pool = MySQLConnectionPool(pool_name="mypool", pool_size=10, **DB_CONFIG)
 
@@ -155,7 +155,8 @@ def get_cases(sheet_id):
             case_list[8] = case_list[8].strftime('%Y-%m-%d %H:%M:%S') if case_list[8] else None
             case_list[9] = case_list[9].strftime('%Y-%m-%d %H:%M:%S') if case_list[9] else None
             formatted_cases.append(case_list)
-        return jsonify({'cases': formatted_cases}), 200
+
+        return jsonify({case[12]: case for case in formatted_cases}), 200
     except Exception as e:
         logger.error(f"An error occurred: {e}")
         return jsonify({'error': str(e)}), 500

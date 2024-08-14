@@ -216,6 +216,7 @@ class TestCasesPanel(wx.Panel):
         # 设置主布局
         self.SetSizer(mainSizer)
         # 初始时不显示用例树，等待用户选择计划和用例表后显示
+        self._setup_icons()  # 初始化时设置图标列表
         self.tree.Hide()
         # 初始时没有用例树数据
         self.testCases = None
@@ -224,6 +225,29 @@ class TestCasesPanel(wx.Panel):
         self.tree.Bind(wx.EVT_TREE_SEL_CHANGED, self.OnSelChanged)
         # 如果有记录，显示上一次打开的页面
         self.restore_state()
+
+    def _setup_icons(self):
+        icons = {
+            "Pass": resource_path("icon\\Pass.png"),
+            "Fail": resource_path("icon\\Fail.png"),
+            "Block": resource_path("icon\\Block.png"),
+            "None": None,
+            "Root": resource_path("icon\\rootIcon.png")
+        }
+        self.image_list = wx.ImageList(16, 16)
+        self.icon_indices = {}
+        transparent_bmp = wx.Bitmap(16, 16, 32)
+        image = transparent_bmp.ConvertToImage()
+        image.InitAlpha()
+        for x in range(16):
+            for y in range(16):
+                image.SetAlpha(x, y, 0)
+        transparent_bmp = wx.Bitmap(image)
+        for status, icon in icons.items():
+            if icon:
+                self.icon_indices[status] = self.image_list.Add(wx.Bitmap(icon))
+            else:
+                self.icon_indices[status] = self.image_list.Add(transparent_bmp)
 
     def on_plan_select(self, event):
         # 选择测试计划后，更新用例表下拉框
@@ -246,7 +270,7 @@ class TestCasesPanel(wx.Panel):
         if selected_index != wx.NOT_FOUND:
             self.sheet_id = self.sheet_name_combo.GetClientData(selected_index)
             self.sheet_name = self.sheet_name_combo.GetString(selected_index)
-            self.testCases = self.PopulateTree(self.sheet_id, self.sheet_name)  # 使用 sheet_id 获取用例树
+            self.PopulateTree(self.sheet_id, self.sheet_name)  # 使用 sheet_id 获取用例树
             self.tree.Show()  # 选择用例表后显示用例树
             # 更新统计信息
             self.update_statistics()
@@ -432,12 +456,12 @@ class TestCasesPanel(wx.Panel):
         self.patvs_monitor.stop_event = True
         start_time = http_manager.get_start_time(self.CaseID)
         # 使用多线程异步运行，防止GUI界面卡死
-        thread = threading.Thread(target=self.patvs_monitor.run_main, args=(int(self.CaseID), list(action_and_num), str(start_time),))
+        thread = threading.Thread(target=self.patvs_monitor.run_main,
+                                  args=(int(self.CaseID), list(action_and_num), str(start_time),))
         thread.setDaemon(True)
         thread.start()
         # 获取线程ID
         self.msg_loop_thread_id = thread.ident
-
 
     def after_test(self):
         for button in self.result_buttons:
@@ -600,30 +624,30 @@ class TestCasesPanel(wx.Panel):
         dialog.Close()
 
     def check_status(self, event):
+        if not self.sheet_id:
+            wx.MessageBox('请先选择用例', 'Warning')
+            return
+        self.testCases = http_manager.get_cases_by_sheet_id(self.sheet_id)
         # 创建一个新的对话框，并且允许对话框最大化
         dialog = wx.Dialog(self, title="查看用例状态", size=(800, 600), style=wx.MAXIMIZE_BOX | wx.DEFAULT_DIALOG_STYLE)
-
         # 创建grid并设置行和列
         self.grid = wx.grid.Grid(dialog)
-        all_case = http_manager.get_cases_by_sheet_id(self.sheet_id)
-        self.grid.CreateGrid(numRows=len(all_case), numCols=len(all_case[0]) - 2)
+        self.grid.CreateGrid(numRows=len(self.testCases), numCols=12)
 
         # 设置列标题
-        cols_title = ['测试结果', '测试耗时(S)', '选择次数', '测试机型', '用例标题', '前置条件', '用例步骤', '预期结果',
+        cols_title = ['测试结果', '测试耗时(S)', '选择次数(弃用)', '测试机型', '用例标题', '前置条件', '用例步骤',
+                      '预期结果',
                       '开始时间', '完成时间', '测试动作', '评论']
         for i, title in enumerate(cols_title):
             self.grid.SetColLabelValue(i, title)
 
-        case_ids = [case[-2] for case in all_case]
-        comments_map = http_manager.post_data(f'/get_comments', {'case_ids': case_ids}, token=self.token).get('comments')
-        logger.warning(comments_map)
-        logger.warning(comments_map.get('3336'))
-        logger.warning(comments_map.get(3336))
+        case_ids = list(self.testCases.keys())
+        comments_map = http_manager.post_data(f'/get_comments', {'case_ids': case_ids}, token=self.token).get(
+            'comments')
         # 填充数据
         self.case_row_to_id = {}
-        for i, case in enumerate(all_case):
-            self.case_row_to_id[i] = case[-2]  # 赋值ID为重置按钮使用
-            case_id = str(case[-2])
+        for i, (case_id, case) in enumerate(self.testCases.items()):
+            self.case_row_to_id[i] = case_id  # 赋值ID为重置按钮使用
             for j, item in enumerate(case[:-2]):  # 排除ID等敏感数据
                 if cols_title[j] == '评论':
                     comments = comments_map.get(case_id, "")
@@ -751,45 +775,43 @@ class TestCasesPanel(wx.Panel):
         """
         logger.warning("开始展示用例树节点")
         self.tree.DeleteAllItems()  # 清空现有的树状结构
-        all_case = http_manager.get_cases_by_sheet_id(sheet_id)
+        self.testCases = http_manager.get_cases_by_sheet_id(sheet_id)
         self.update_statistics()
-        # 定义用于表示状态的图标
-        icons = {
-            "Pass": resource_path("icon\\Pass.png"),
-            "Fail": resource_path("icon\\Fail.png"),
-            "Block": resource_path("icon\\Block.png"),
-            "None": None,
-            "Root": resource_path("icon\\rootIcon.png")
-        }
-        image_list = wx.ImageList(16, 16)
-        self.icon_indices = {}
-        # 创建一个透明位图
-        transparent_bmp = wx.Bitmap(16, 16, 32)
-        image = transparent_bmp.ConvertToImage()
-        image.InitAlpha()
-        for x in range(16):
-            for y in range(16):
-                image.SetAlpha(x, y, 0)
-        transparent_bmp = wx.Bitmap(image)
-        for status, icon in icons.items():
-            if icon:
-                self.icon_indices[status] = image_list.Add(wx.Bitmap(icon))  # 逐个向图像列表中添加图标，并获取其索引
-            else:
-                self.icon_indices[status] = image_list.Add(transparent_bmp)
-        self.tree.AssignImageList(image_list)  # 将图像列表分配给树
+        # # 定义用于表示状态的图标
+        # icons = {
+        #     "Pass": resource_path("icon\\Pass.png"),
+        #     "Fail": resource_path("icon\\Fail.png"),
+        #     "Block": resource_path("icon\\Block.png"),
+        #     "None": None,
+        #     "Root": resource_path("icon\\rootIcon.png")
+        # }
+        # image_list = wx.ImageList(16, 16)
+        # self.icon_indices = {}
+        # # 创建一个透明位图
+        # transparent_bmp = wx.Bitmap(16, 16, 32)
+        # image = transparent_bmp.ConvertToImage()
+        # image.InitAlpha()
+        # for x in range(16):
+        #     for y in range(16):
+        #         image.SetAlpha(x, y, 0)
+        # transparent_bmp = wx.Bitmap(image)
+        # for status, icon in icons.items():
+        #     if icon:
+        #         self.icon_indices[status] = image_list.Add(wx.Bitmap(icon))  # 逐个向图像列表中添加图标，并获取其索引
+        #     else:
+        #         self.icon_indices[status] = image_list.Add(transparent_bmp)
+        # self.tree.AssignImageList(image_list)  # 将图像列表分配给树
+        if self.tree.GetImageList() is None:
+            self.tree.AssignImageList(self.image_list)
 
         # 添加根节点并设置图标
         root = self.tree.AddRoot(sheet_name, self.icon_indices['Root'])
-
-        for row in all_case:
-            caseStatus = row[0]
-            caseID = row[12]
+        for key, value in self.testCases.items():
+            caseID = key
+            caseStatus = value[0]
             # 按照 机型→标题 展示title
-            caseModel = (row[3] + '→') if row[3] else ''
-            caseTitle = row[4]
-            caseSteps = row[6]
-            expectedResult = row[7]
-
+            caseModel = (value[3] + '→') if value[3] else ''
+            caseTitle = value[4]
             # 根据状态添加相应的图标
             if caseStatus in self.icon_indices:
                 caseNode = self.tree.AppendItem(root, caseModel + caseTitle)
@@ -799,13 +821,7 @@ class TestCasesPanel(wx.Panel):
 
             # 将CaseID存储在节点数据中
             self.tree.SetItemData(caseNode, caseID)
-            stepsNode = self.tree.AppendItem(caseNode, f"操作步骤: {caseSteps}")
-            self.tree.SetItemData(stepsNode, caseID)
-            resultNode = self.tree.AppendItem(caseNode, f"预期结果: {expectedResult}")
-            self.tree.SetItemData(resultNode, caseID)
-
         self.tree.Expand(root)
-        return all_case
 
     def OnSelChanged(self, event):
         """
@@ -828,22 +844,20 @@ class TestCasesPanel(wx.Panel):
         logger.info(f"You selected the case with ID: {self.CaseID}")
         action_and_num = http_manager.get_params(f'/get_case_actions_and_num/{self.CaseID}').get('actions_and_num')
         self.actions_and_num.SetLabel(f"监控动作: {action_and_num}")
-        for case in self.testCases:
-            if case[12] == self.CaseID:
-                self.content.Clear()
-                self.log_content.Clear()
-                self.content.SetValue(f"测试机型: {case[3]}\n\n")
-                self.content.AppendText(f"用例标题:\n{case[4]}\n\n")
-                self.content.AppendText(f"前置条件:\n{case[5]}\n\n")
-                self.content.AppendText(f"操作步骤:\n{case[6]}\n\n")
-                self.content.SetInsertionPointEnd()  # 移动光标到末尾以便于添加蓝色文本
-                self.content.SetDefaultStyle(wx.TextAttr(wx.BLUE))
-                self.content.AppendText(f"预期结果:\n{case[7]}")
-                # 再次将文本颜色设置回默认颜色，以防止后续文本也变为蓝色
-                self.content.SetDefaultStyle(wx.TextAttr(wx.BLACK))
-                wx.CallAfter(self.scroll_to_top)  # 调用滚动方法
-                break
-
+        if self.CaseID in self.testCases:
+            case = self.testCases[self.CaseID]
+            self.content.Clear()
+            self.log_content.Clear()
+            self.content.SetValue(f"测试机型: {case[3]}\n\n")
+            self.content.AppendText(f"用例标题:\n{case[4]}\n\n")
+            self.content.AppendText(f"前置条件:\n{case[5]}\n\n")
+            self.content.AppendText(f"操作步骤:\n{case[6]}\n\n")
+            self.content.SetInsertionPointEnd()  # 移动光标到末尾以便于添加蓝色文本
+            self.content.SetDefaultStyle(wx.TextAttr(wx.BLUE))
+            self.content.AppendText(f"预期结果:\n{case[7]}")
+            # 再次将文本颜色设置回默认颜色，以防止后续文本也变为蓝色
+            self.content.SetDefaultStyle(wx.TextAttr(wx.BLACK))
+            wx.CallAfter(self.scroll_to_top)  # 调用滚动方法
 
     def scroll_to_top(self):
         """
