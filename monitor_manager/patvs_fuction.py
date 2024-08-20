@@ -563,7 +563,7 @@ class Patvs_Fuction():
             elif action == 'restart':
                 wx.CallAfter(self.window.add_log_message, f"开始执行监控: {action}，目标测试次数: {test_num}")
                 threading.Thread(target=self.test_count_restart_events, args=(start_time, test_num,)).start()
-            elif self.KEY_MAPPING.get(action.lower()):
+            elif action.lower() in self.KEY_MAPPING:
                 wx.CallAfter(self.window.add_log_message, f"开始执行监控按键: {action}，目标测试次数: {test_num}")
                 threading.Thread(target=self.monitor_keystrokes, args=(test_num, action,)).start()
             # 等待当前监控动作完成

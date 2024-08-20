@@ -29,7 +29,7 @@ DB_CONFIG = {
 #     'database': 'patvs_db',
 #     'buffered': True
 # }
-logger.warning(os.getenv('DB_HOST'))
+
 db_pool = MySQLConnectionPool(pool_name="mypool", pool_size=10, **DB_CONFIG)
 
 
@@ -643,4 +643,4 @@ def get_case_actions_and_num(case_id):
 
 
 if __name__ == '__main__':
-    app.run(debug=True, host='10.184.32.52', port=80)
+    app.run(debug=True, host='127.0.0.1', port=80)

@@ -2,6 +2,7 @@
 # 负责GUI界面展示以及交互逻辑
 import os
 import json
+import time
 
 import pywintypes
 import requests
@@ -222,7 +223,7 @@ class TestCasesPanel(wx.Panel):
         self.testCases = None
         self.sheet_id = None
         self.CaseID = None
-        self.tree.Bind(wx.EVT_TREE_SEL_CHANGED, self.OnSelChanged)
+        self.tree.Bind(wx.EVT_TREE_SEL_CHANGED, self.case_details)
         # 如果有记录，显示上一次打开的页面
         self.restore_state()
 
@@ -270,7 +271,7 @@ class TestCasesPanel(wx.Panel):
         if selected_index != wx.NOT_FOUND:
             self.sheet_id = self.sheet_name_combo.GetClientData(selected_index)
             self.sheet_name = self.sheet_name_combo.GetString(selected_index)
-            self.PopulateTree(self.sheet_id, self.sheet_name)  # 使用 sheet_id 获取用例树
+            self.case_tree(self.sheet_id, self.sheet_name)  # 使用 sheet_id 获取用例树
             self.tree.Show()  # 选择用例表后显示用例树
             # 更新统计信息
             self.update_statistics()
@@ -767,7 +768,7 @@ class TestCasesPanel(wx.Panel):
         except IOError as e:
             wx.LogError(f"无法保存文件 '{filepath}'. 错误: {e}")
 
-    def PopulateTree(self, sheet_id, sheet_name):
+    def case_tree(self, sheet_id, sheet_name):
         """
         负责展示用例左侧节点
         :param sheet_id: 用例文件
@@ -777,53 +778,29 @@ class TestCasesPanel(wx.Panel):
         self.tree.DeleteAllItems()  # 清空现有的树状结构
         self.testCases = http_manager.get_cases_by_sheet_id(sheet_id)
         self.update_statistics()
-        # # 定义用于表示状态的图标
-        # icons = {
-        #     "Pass": resource_path("icon\\Pass.png"),
-        #     "Fail": resource_path("icon\\Fail.png"),
-        #     "Block": resource_path("icon\\Block.png"),
-        #     "None": None,
-        #     "Root": resource_path("icon\\rootIcon.png")
-        # }
-        # image_list = wx.ImageList(16, 16)
-        # self.icon_indices = {}
-        # # 创建一个透明位图
-        # transparent_bmp = wx.Bitmap(16, 16, 32)
-        # image = transparent_bmp.ConvertToImage()
-        # image.InitAlpha()
-        # for x in range(16):
-        #     for y in range(16):
-        #         image.SetAlpha(x, y, 0)
-        # transparent_bmp = wx.Bitmap(image)
-        # for status, icon in icons.items():
-        #     if icon:
-        #         self.icon_indices[status] = image_list.Add(wx.Bitmap(icon))  # 逐个向图像列表中添加图标，并获取其索引
-        #     else:
-        #         self.icon_indices[status] = image_list.Add(transparent_bmp)
-        # self.tree.AssignImageList(image_list)  # 将图像列表分配给树
         if self.tree.GetImageList() is None:
             self.tree.AssignImageList(self.image_list)
 
         # 添加根节点并设置图标
         root = self.tree.AddRoot(sheet_name, self.icon_indices['Root'])
         for key, value in self.testCases.items():
-            caseID = key
-            caseStatus = value[0]
+            case_id = key
+            case_status = value[0]
             # 按照 机型→标题 展示title
-            caseModel = (value[3] + '→') if value[3] else ''
-            caseTitle = value[4]
+            case_model = (value[3] + '→') if value[3] else ''
+            case_title = value[4]
             # 根据状态添加相应的图标
-            if caseStatus in self.icon_indices:
-                caseNode = self.tree.AppendItem(root, caseModel + caseTitle)
-                self.tree.SetItemImage(caseNode, self.icon_indices[caseStatus])  # 设置节点图像
+            if case_status in self.icon_indices:
+                case_node = self.tree.AppendItem(root, case_model + case_title)
+                self.tree.SetItemImage(case_node, self.icon_indices[case_status])  # 设置节点图像
             else:
-                caseNode = self.tree.AppendItem(root, caseModel + caseTitle)
+                case_node = self.tree.AppendItem(root, case_model + case_title)
 
             # 将CaseID存储在节点数据中
-            self.tree.SetItemData(caseNode, caseID)
+            self.tree.SetItemData(case_node, case_id)
         self.tree.Expand(root)
 
-    def OnSelChanged(self, event):
+    def case_details(self, event):
         """
         负责展示用例详情
         :param event:
