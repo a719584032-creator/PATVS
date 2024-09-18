@@ -13,15 +13,15 @@ import re
 app = Flask(__name__)
 app.config['SECRET_KEY'] = 'lenovo_secret_key'
 # 数据库配置
-DB_CONFIG = {
-    'host': os.getenv('DB_HOST'),
-    'user': os.getenv('DB_USER'),
-    'password': os.getenv('DB_PASSWORD'),
-    'database': os.getenv('DB_DATABASE'),
-    'buffered': True
-}
+# DB_CONFIG = {
+#     'host': os.getenv('DB_HOST'),
+#     'user': os.getenv('DB_USER'),
+#     'password': os.getenv('DB_PASSWORD'),
+#     'database': os.getenv('DB_DATABASE'),
+#     'buffered': True
+# }
 
-
+# 生产
 # DB_CONFIG = {
 #     'host': '10.196.155.148',
 #     'user': 'a_appconnect',
@@ -30,6 +30,14 @@ DB_CONFIG = {
 #     'buffered': True
 # }
 
+# test
+DB_CONFIG = {
+    'host': '10.196.155.148',
+    'user': 'a_appconnect',
+    'password': 'dHt6BGB4Zxi^',
+    'database': 'patvs_test',
+    'buffered': True
+}
 db_pool = MySQLConnectionPool(pool_name="mypool", pool_size=10, **DB_CONFIG)
 
 
@@ -130,6 +138,38 @@ def insert_case(current_user):
         manager = TestCaseManager(conn, cursor)
         manager.insert_case_by_filename(plan_name, project_name, sheet_name, tester, workloading, filename, cases,
                                         model_name)
+        conn.commit()
+        return jsonify({'message': 'Case inserted successfully.'}), 200
+    except Exception as e:
+        conn.rollback()
+        logger.error(f"An error occurred: {e}")
+        return jsonify({'error': str(e)}), 500
+    finally:
+        cursor.close()
+        conn.close()
+
+
+@app.route('/insert_case_by_power', methods=['POST'])
+@token_required
+def insert_case_by_power(current_user):
+    data = request.json
+    project_name = data.get('project_name')
+    sheet_name = data.get('sheet_name')
+    tester = data.get('tester')
+    workloading = data.get('workloading')
+    filename = data.get('filename')
+    cases = data.get('cases')
+
+    logger.info(f"Inserting case for plan: {filename}, project: {project_name}, sheet: {sheet_name}")
+
+    if not project_name or not sheet_name or not tester or not workloading or not filename or not cases:
+        return jsonify({'error': 'Missing required parameters'}), 400
+
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    try:
+        manager = TestCaseManager(conn, cursor)
+        manager.insert_case_by_power_filename(filename, sheet_name, project_name, tester, workloading, cases)
         conn.commit()
         return jsonify({'message': 'Case inserted successfully.'}), 200
     except Exception as e:
@@ -506,11 +546,11 @@ def get_plan_id(plan_name):
 
 
 @app.route('/add_user', methods=['POST'])
-@token_required
-def add_user(current_user):
+def add_user():
     data = request.json
     username = data.get('username')
     password = data.get('password')
+    role = data.get('role', None)
     logger.info(f"add uesr by username: {username}, password: {password} ")
 
     if not username or not password:
@@ -520,7 +560,7 @@ def add_user(current_user):
     cursor = conn.cursor()
     try:
         manager = TestCaseManager(conn, cursor)
-        manager.add_user(username, password)
+        manager.add_user(username, password, role)
         conn.commit()
         return jsonify({'message': f'add user {username} successfully.'}), 200
     except Exception as e:
@@ -640,6 +680,11 @@ def get_case_actions_and_num(case_id):
     finally:
         cursor.close()
         conn.close()
+
+@app.route('/hello', methods=['GET'])
+def get_hello():
+    return jsonify({'tester': "hello,hello,hello,hello,hello。网络是通的。"}), 200
+
 
 
 if __name__ == '__main__':

@@ -126,6 +126,46 @@ class TestCaseManager:
             logger.error(f"Error: {err}")
             raise Exception(f"Error: {err}")
 
+    def insert_case_by_power_filename(self, filename, sheet_name, project_name, tester, workloading, cases):
+        plan_name = os.path.basename(filename)  # 获取文件名
+        try:
+            # 查询是否已经存在相同的 plan_name
+            self.cursor.execute("SELECT id FROM TestPlan WHERE plan_name = %s", (plan_name,))
+            result = self.cursor.fetchone()
+
+            if result:
+                # 已经存在相同的 plan_name，获取其 id
+                plan_id = result[0]
+            else:
+                # 插入新的 TestPlan 记录
+                plan_query = "INSERT INTO TestPlan (plan_name, filename) VALUES (%s, %s)"
+                self.cursor.execute(plan_query, (plan_name, filename))
+                plan_id = self.cursor.lastrowid
+
+            # 检查是否已经存在相同的 sheet_name
+            self.cursor.execute("SELECT id FROM TestSheet WHERE sheet_name = %s AND plan_id = %s",
+                                (sheet_name, plan_id))
+            sheet_result = self.cursor.fetchone()
+
+            if sheet_result:
+                # 如果 sheet_name 已经存在，直接跳过后续操作
+                logger.warning(f"Sheet '{sheet_name}' already exists for plan '{plan_name}', skipping insertion.")
+                return
+            else:
+                # 插入新的 TestSheet 记录
+                sheet_query = "INSERT INTO TestSheet (sheet_name, project_name, tester, workloading, plan_id) VALUES (%s, %s, %s, %s, %s)"
+                self.cursor.execute(sheet_query, (sheet_name, project_name, tester, workloading, plan_id))
+                sheet_id = self.cursor.lastrowid
+
+                # 插入到 TestCase 表
+                case_query = "INSERT INTO TestCase (ModelName, CaseTitle, PreConditions, CaseSteps, ExpectedResult, sheet_id) VALUES (%s, %s, %s, %s, %s, %s)"
+                for case in cases:
+                    self.cursor.execute(case_query,
+                                        (case['model_name'], case['title'], case['preconditions'], case['steps'], case['expected'], sheet_id))
+        except Exception as err:
+            logger.error(f"Error: {err}")
+            raise Exception(f"Error: {err}")
+
     def select_case_by_sheet_id(self, sheet_id):
         query = "SELECT * FROM TestCase WHERE sheet_id = %s"
         self.cursor.execute(query, (sheet_id,))
@@ -600,10 +640,11 @@ class TestCaseManager:
         logger.info(plan_id)
         return plan_id[0]
 
-    def add_user(self, username, password):
+    def add_user(self, username, password, role=None):
         password_hash = generate_password_hash(password)
-        self.cursor.execute('INSERT INTO users (username, password_hash) VALUES (%s, %s)',
-                            (username, password_hash))
+        self.cursor.execute(
+            'INSERT INTO users (username, password_hash, role) VALUES (%s, %s, %s)',
+            (username, password_hash, role))
 
     def validate_user(self, username, password):
         self.cursor.execute('SELECT * FROM users WHERE username = %s', (username,))

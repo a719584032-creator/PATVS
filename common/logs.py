@@ -15,7 +15,7 @@ current_date = datetime.now().strftime('%Y-%m-%d')
 if IS_SERVER:
     directory = f"/tmp/PATVS/{current_date}"
 else:
-    directory = f"D:\\PATVS\\{current_date}"
+    directory = f"C:\\PATVS\\{current_date}"
 if not os.path.exists(directory):
     os.makedirs(directory)
     os.chmod(directory, 0o755)  # 设置目录权限为可读写

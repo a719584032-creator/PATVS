@@ -107,10 +107,12 @@ class TestCasesPanel(wx.Panel):
         # 用例筛选下拉框
         self.plan_name_combo = wx.ComboBox(self, choices=http_manager.get_plan_names(self.username))
         self.plan_name_combo.Bind(wx.EVT_COMBOBOX, self.on_plan_select)
+        self.plan_name_combo.Bind(wx.EVT_MOTION, self.on_plan_hover)
 
         # 添加新的下拉框用于显示 sheet_name
         self.sheet_name_combo = wx.ComboBox(self)
         self.sheet_name_combo.Bind(wx.EVT_COMBOBOX, self.on_sheet_select)
+        self.sheet_name_combo.Bind(wx.EVT_MOTION, self.on_sheet_hover)
 
         # 创建一个字体对象，字体大小为16，字体家族为瑞士，风格为正常，但是字体粗细为加粗
         font = wx.Font(12, wx.SWISS, wx.NORMAL, wx.NORMAL)
@@ -275,6 +277,22 @@ class TestCasesPanel(wx.Panel):
             self.tree.Show()  # 选择用例表后显示用例树
             # 更新统计信息
             self.update_statistics()
+            self.CaseID = None
+
+    # 绑定鼠标悬停事件的处理函数
+    def on_plan_hover(self, event):
+        # 获取当前选择的内容
+        selection = self.plan_name_combo.GetStringSelection()
+        if selection:
+            self.plan_name_combo.SetToolTip(selection)
+        event.Skip()
+
+    def on_sheet_hover(self, event):
+        # 获取当前选择的内容
+        selection = self.sheet_name_combo.GetStringSelection()
+        if selection:
+            self.sheet_name_combo.SetToolTip(selection)
+        event.Skip()
 
     def clear_statistics(self):
         # 清空统计信息
@@ -323,12 +341,12 @@ class TestCasesPanel(wx.Panel):
             'start_clicked': self.start_clicked if hasattr(self, 'start_clicked') else False
         }
         logger.info('Saving state.')
-        with open(r'D:\PATVS\window_state.json', 'w') as state_file:
+        with open(r'C:\PATVS\window_state.json', 'w') as state_file:
             json.dump(state, state_file)
 
     def restore_state(self):
         try:
-            with open(r'D:\PATVS\window_state.json', 'r') as state_file:
+            with open(r'C:\PATVS\window_state.json', 'r') as state_file:
                 state = json.load(state_file)
                 # 防止 username 篡改数据
                 if state['username'] == self.username:
@@ -403,66 +421,85 @@ class TestCasesPanel(wx.Panel):
             wx.CallAfter(self.case_enable)
             wx.CallAfter(self.refresh_node_case_status, case_status=case_result)
             wx.CallAfter(self.update_statistics)
-        elif clicked_button in [self.result_buttons['Fail'], self.result_buttons['Block']]:
-            # 处理 fail or block
+        if clicked_button is self.result_buttons['Fail']:
+            # 处理 Fail
             # 弹出文本输入对话框
-            dlg = wx.TextEntryDialog(self, '请输入Fail/Block原因 :', 'Comment')
+            dlg = wx.TextEntryDialog(self, '请输入Fail原因 :', 'Comment')
             if dlg.ShowModal() == wx.ID_OK:
                 input_content = dlg.GetValue().strip()  # 获取输入的内容
                 if input_content:
-                    logger.info(f"{case_result} Button clicked, Content: {input_content}")
-                    http_manager.update_end_time_case_id(self.CaseID, case_result, input_content, self.token)
+                    logger.info(f"Fail Button clicked, Content: {input_content}")
+                    http_manager.update_end_time_case_id(self.CaseID, case_result, f'Fail: {input_content}', self.token)
                     wx.CallAfter(self.case_enable)
                     wx.CallAfter(self.refresh_node_case_status, case_status=case_result)
                     wx.CallAfter(self.update_statistics)
+            else:
+                wx.MessageDialog(self, '内容不能为空，请重新输入!', '错误', style=wx.OK | wx.ICON_ERROR).ShowModal()
+            dlg.Destroy()
+        if clicked_button is self.result_buttons['Block']:
+            # 处理 fail or block
+            # 弹出文本输入对话框
+            dlg = wx.TextEntryDialog(self, '请输入Block原因 :', 'Comment')
+            if dlg.ShowModal() == wx.ID_OK:
+                input_content = dlg.GetValue().strip()  # 获取输入的内容
+                if input_content:
+                    logger.info(f"Block Button clicked, Content: {input_content}")
+                    http_manager.update_end_time_case_id(self.CaseID, case_result, f'Block: {input_content}',
+                                                         self.token)
                     # 设置事件以通知监控线程停止
                     self.patvs_monitor.stop_event = False
                     # 当用例为 block 时，需要主动去停止 messageLoop 的循环
-                    try:
-                        win32api.PostThreadMessage(self.msg_loop_thread_id, win32con.WM_QUIT, 0, 0)
-                    except pywintypes.error as e:
-                        logger.warning(f"{e}")
-                    except:
-                        pass
-                    try:
-                        win32api.PostThreadMessage(self.patvs_monitor.msg_loop_thread_id, win32con.WM_QUIT, 0, 0)
-                    except pywintypes.error as e:
-                        logger.warning(f"{e}")
-                    except:
-                        pass
+                    if self.patvs_monitor.msg_loop_thread_id:
+                        logger.warning("进入终止消息循环")
+                        try:
+                            win32api.PostThreadMessage(self.patvs_monitor.msg_loop_thread_id, win32con.WM_QUIT, 0, 0)
+                        except pywintypes.error as e:
+                            logger.warning(f"{e}")
+                        except:
+                            pass
+                        self.patvs_monitor.msg_loop_thread_id = None
+                    time.sleep(1)  # block后线程终止需要一些时间，防止出现意外解禁按钮
+                    wx.CallAfter(self.case_enable)
+                    wx.CallAfter(self.refresh_node_case_status, case_status=case_result)
+                    wx.CallAfter(self.update_statistics)
                 else:
                     wx.MessageDialog(self, '内容不能为空，请重新输入!', '错误', style=wx.OK | wx.ICON_ERROR).ShowModal()
             dlg.Destroy()
         self.start_clicked = False
 
     def start_test(self, event):
-        self.start_clicked = True
-        # 检查是否有选中的用例
-        if not hasattr(self, 'CaseID') or not self.CaseID:
-            wx.MessageBox('请先选择用例', 'Warning')
+        try:
+            self.start_clicked = True
+            # 检查是否有选中的用例
+            if not hasattr(self, 'CaseID') or not self.CaseID:
+                wx.MessageBox('请先选择用例', 'Warning')
+                return
+            action_and_num = http_manager.get_params(f'/get_case_actions_and_num/{self.CaseID}').get('actions_and_num')
+            logger.warning(action_and_num)
+            if not action_and_num:
+                wx.MessageBox('未检测到任何匹配项，请按照规则修改用例标题后再测试', 'Warning')
+                return
+            result = http_manager.get_params(f'/get_case_result/{self.CaseID}')
+            if result.get('case_result'):
+                wx.MessageBox('已有测试结果，请重置此条测试用例后再进行测试', 'Warning')
+                return
+            wx.CallAfter(self.case_disable)
+            http_manager.post_data('/update_start_time',
+                                   {'case_id': self.CaseID, 'actions': str(action_and_num)}, token=self.token)
+            # 初始化终止信号
+            self.patvs_monitor.stop_event = True
+            start_time = http_manager.get_start_time(self.CaseID)
+            # 使用多线程异步运行，防止GUI界面卡死
+            thread = threading.Thread(target=self.patvs_monitor.run_main,
+                                      args=(int(self.CaseID), list(action_and_num), str(start_time),))
+            thread.setDaemon(True)
+            thread.start()
+            # 获取线程ID
+            self.msg_loop_thread_id = thread.ident
+        except Exception as e:
+            wx.MessageBox(f'出现未知错误: {e},请联系系统管理员', 'Error')
+            logger.error(f'出现未知错误: {e}')
             return
-        action_and_num = http_manager.get_params(f'/get_case_actions_and_num/{self.CaseID}').get('actions_and_num')
-        logger.warning(action_and_num)
-        if not action_and_num:
-            wx.MessageBox('未检测到任何匹配项，请按照规则修改用例标题后再测试', 'Warning')
-            return
-        result = http_manager.get_params(f'/get_case_result/{self.CaseID}')
-        if result.get('case_result'):
-            wx.MessageBox('已有测试结果，请重置此条测试用例后再进行测试', 'Warning')
-            return
-        wx.CallAfter(self.case_disable)
-        http_manager.post_data('/update_start_time',
-                               {'case_id': self.CaseID, 'actions': str(action_and_num)}, token=self.token)
-        # 初始化终止信号
-        self.patvs_monitor.stop_event = True
-        start_time = http_manager.get_start_time(self.CaseID)
-        # 使用多线程异步运行，防止GUI界面卡死
-        thread = threading.Thread(target=self.patvs_monitor.run_main,
-                                  args=(int(self.CaseID), list(action_and_num), str(start_time),))
-        thread.setDaemon(True)
-        thread.start()
-        # 获取线程ID
-        self.msg_loop_thread_id = thread.ident
 
     def after_test(self):
         for button in self.result_buttons:
@@ -474,6 +511,7 @@ class TestCasesPanel(wx.Panel):
         case 执行状态按钮显示
         :return:
         """
+        self.status_button.Disable()
         self.plan_name_combo.Disable()
         self.sheet_name_combo.Disable()
         self.tree.Disable()
@@ -489,6 +527,7 @@ class TestCasesPanel(wx.Panel):
         case 未执行状态按钮显示
         :return:
         """
+        self.status_button.Enable()
         self.tree.Enable()
         self.plan_name_combo.Enable()
         self.sheet_name_combo.Enable()
@@ -538,7 +577,7 @@ class TestCasesPanel(wx.Panel):
 
             def complete_upload():
                 try:
-                    run_main(pathname, self.token)
+                    run_main(pathname, self.username, self.token)
                     wx.CallAfter(wx.MessageBox, "文件上传和解析成功", "提示", wx.OK | wx.ICON_INFORMATION)
                 except Exception as e:
                     # 格式校验出错
@@ -637,8 +676,7 @@ class TestCasesPanel(wx.Panel):
 
         # 设置列标题
         cols_title = ['测试结果', '测试耗时(S)', '选择次数(弃用)', '测试机型', '用例标题', '前置条件', '用例步骤',
-                      '预期结果',
-                      '开始时间', '完成时间', '测试动作', '评论']
+                      '预期结果', '开始时间', '完成时间', '测试动作', '评论']
         for i, title in enumerate(cols_title):
             self.grid.SetColLabelValue(i, title)
 
@@ -690,11 +728,25 @@ class TestCasesPanel(wx.Panel):
         # 清除原有数据
         grid.ClearGrid()
         # 获取新的数据
-        data = http_manager.get_params(f'/get_cases_by_case_id/{self.CaseID}')
-        all_case = data.get('cases')
-        for i, case in enumerate(all_case):
-            for j, item in enumerate(case[:-2]):  # 排除用例ID
-                grid.SetCellValue(i, j + 1, str(item))  # self.grid.InsertCols(0) 所以要j+1
+        # data = http_manager.get_params(f'/get_cases_by_case_id/{self.CaseID}')
+        # all_case = data.get('cases')
+        cols_title = ['测试结果', '测试耗时(S)', '选择次数(弃用)', '测试机型', '用例标题', '前置条件', '用例步骤',
+                      '预期结果', '开始时间', '完成时间', '测试动作', '评论']
+        self.testCases = http_manager.get_cases_by_sheet_id(self.sheet_id)
+        case_ids = list(self.testCases.keys())
+        comments_map = http_manager.post_data(f'/get_comments', {'case_ids': case_ids}, token=self.token).get(
+            'comments')
+        for i, (case_id, case) in enumerate(self.testCases.items()):
+            for j, item in enumerate(case[:-2]):  # 排除ID等敏感数据
+                if cols_title[j] == '评论':
+                    comments = comments_map.get(case_id, "")
+                    self.grid.SetCellValue(i, j + 1, str(comments))
+                else:
+                    self.grid.SetCellValue(i, j + 1, str(item))  # self.grid.InsertCols(0) 所以要j+1
+        #     grid.SetCellValue(i, j + 1, str(item))  # self.grid.InsertCols(0) 所以要j+1
+        # for i, case in enumerate(all_case):
+        #     for j, item in enumerate(case[:-2]):  # 排除用例ID
+        #         grid.SetCellValue(i, j + 1, str(item))  # self.grid.InsertCols(0) 所以要j+1
         # 刷新网格以显示新的数据
         grid.ForceRefresh()
 

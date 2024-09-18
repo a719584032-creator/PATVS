@@ -102,11 +102,12 @@ class TestAdminPanel(wx.Panel):
             plan_names = []
         self.plan_name_combo = wx.ComboBox(self, choices=plan_names)
         self.plan_name_combo.Bind(wx.EVT_COMBOBOX, self.on_plan_select)
+        self.plan_name_combo.Bind(wx.EVT_MOTION, self.on_plan_hover)
 
         # 添加新的下拉框用于显示 sheet_name
         self.sheet_name_combo = wx.ComboBox(self)
         self.sheet_name_combo.Bind(wx.EVT_COMBOBOX, self.on_sheet_select)
-
+        self.sheet_name_combo.Bind(wx.EVT_MOTION, self.on_sheet_hover)
         # 创建一个水平盒子来放置 case_search_combo 下拉框
         caseSearchSizer = wx.BoxSizer(wx.HORIZONTAL)
 
@@ -134,6 +135,21 @@ class TestAdminPanel(wx.Panel):
         mainSizer.Add(self.notebook, 1, wx.EXPAND)
 
         self.SetSizer(mainSizer)
+
+
+    def on_plan_hover(self, event):
+        # 获取当前选择的内容
+        selection = self.plan_name_combo.GetStringSelection()
+        if selection:
+            self.plan_name_combo.SetToolTip(selection)
+        event.Skip()
+
+    def on_sheet_hover(self, event):
+        # 获取当前选择的内容
+        selection = self.sheet_name_combo.GetStringSelection()
+        if selection:
+            self.sheet_name_combo.SetToolTip(selection)
+        event.Skip()
 
     def on_plan_select(self, event):
         # 选择测试计划后，更新用例表下拉框和测试人员
