@@ -1,5 +1,6 @@
 import sys
 import os
+
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 from flask import Flask, request, jsonify
 from common.logs import logger
@@ -681,10 +682,38 @@ def get_case_actions_and_num(case_id):
         cursor.close()
         conn.close()
 
+
+@app.route('/update_project_workloading_tester', methods=['POST'])
+def update_project_workloading_tester(case_id):
+    logger.info(f"get_case_actions_and_num case_id: {case_id} ")
+    data = request.json
+    plan_name = data.get('plan_name')
+    project_name = data.get('project_name', None)
+    workloading = data.get('workloading', None)
+    tester = data.get('tester', None)
+    sheet_id = data.get('sheet_id', None)
+    logger.info(
+        f"update_project_workloading_tester plan_name: {plan_name}, project_name: {project_name} , workloading: {workloading}, tester: {tester}, sheet_id: {sheet_id}")
+
+    if plan_name:
+        return jsonify({'error': 'Missing required parameters'}), 400
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    try:
+        manager = TestCaseManager(conn, cursor)
+        manager.update_project_workloading_tester(plan_name, project_name, workloading, tester, sheet_id)
+        return jsonify({'message': 'success'}), 200
+    except Exception as e:
+        logger.error(f"An error occurred: {e}")
+        return jsonify({'error': str(e)}), 500
+    finally:
+        cursor.close()
+        conn.close()
+
+
 @app.route('/hello', methods=['GET'])
 def get_hello():
     return jsonify({'tester': "hello,hello,hello,hello,hello。网络是通的。"}), 200
-
 
 
 if __name__ == '__main__':

@@ -161,7 +161,8 @@ class TestCaseManager:
                 case_query = "INSERT INTO TestCase (ModelName, CaseTitle, PreConditions, CaseSteps, ExpectedResult, sheet_id) VALUES (%s, %s, %s, %s, %s, %s)"
                 for case in cases:
                     self.cursor.execute(case_query,
-                                        (case['model_name'], case['title'], case['preconditions'], case['steps'], case['expected'], sheet_id))
+                                        (case['model_name'], case['title'], case['preconditions'], case['steps'],
+                                         case['expected'], sheet_id))
         except Exception as err:
             logger.error(f"Error: {err}")
             raise Exception(f"Error: {err}")
@@ -416,6 +417,10 @@ class TestCaseManager:
         executed_cases_count = self.count_executed_case_by_sheet_id(sheet_id)
         # 通过用例数
         result_count = self.count_test_case_results_by_sheet_id(sheet_id)
+        # 项目名
+        project_name = self.select_project_name_by_id(sheet_id=sheet_id)
+        # 测试人员
+        tester = self.select_tester_by_plan_or_sheet(sheet_id=sheet_id)
 
         # 计算执行进度百分比
         def calculate_percentage(part, whole):
@@ -437,7 +442,10 @@ class TestCaseManager:
             "fail_count": result_count['fail_count'],
             "block_count": result_count['block_count'],
             "case_time_count": case_time_count,
-            "workloading_time": workloading_time
+            "workloading_time": workloading_time,
+            "project_name": project_name,
+            "tester": tester
+
         })
         return {
             "case_count": case_count,
@@ -450,7 +458,9 @@ class TestCaseManager:
             "fail_count": result_count['fail_count'],
             "block_count": result_count['block_count'],
             "case_time_count": case_time_count,
-            "workloading_time": workloading_time
+            "workloading_time": workloading_time,
+            "project_name": project_name,
+            "tester": tester
         }
 
     def count_case_time_by_plan_id(self, plan_id):
@@ -556,6 +566,14 @@ class TestCaseManager:
                 'block_count': 0
             }
 
+    def select_project_name_by_id(self, sheet_id=None, plan_id=None):
+        if sheet_id:
+            self.cursor.execute('SELECT project_name FROM testsheet where id = %s', (sheet_id,))
+        else:
+            self.cursor.execute('SELECT DISTINCT project_name FROM testsheet where plan_id = %s', (plan_id,))
+        result = self.cursor.fetchall()
+        return [project_name[0] for project_name in result]
+
     def calculate_plan_statistics(self, plan_id):
         """
         计算测试计划的执行进度和通过率
@@ -566,6 +584,8 @@ class TestCaseManager:
         case_count = self.count_case_by_plan_id(plan_id)
         executed_cases_count = self.count_executed_case_by_plan_id(plan_id)
         result_count = self.count_test_case_results_by_plan_id(plan_id)
+        project_name = self.select_project_name_by_id(plan_id=plan_id)
+        tester = self.select_tester_by_plan_or_sheet(plan_id=plan_id)
 
         # 计算执行进度百分比
         def calculate_percentage(part, whole):
@@ -587,7 +607,9 @@ class TestCaseManager:
             "fail_count": result_count['fail_count'],
             "block_count": result_count['block_count'],
             "case_time_count": case_time_count,
-            "workloading_time": workloading_time
+            "workloading_time": workloading_time,
+            "project_name": project_name,
+            "tester": tester
         })
         return {
             "case_count": case_count,
@@ -600,7 +622,9 @@ class TestCaseManager:
             "fail_count": result_count['fail_count'],
             "block_count": result_count['block_count'],
             "case_time_count": case_time_count,
-            "workloading_time": workloading_time
+            "workloading_time": workloading_time,
+            "project_name": project_name,
+            "tester": tester
         }
 
     def select_start_time(self, case_id):
@@ -618,18 +642,13 @@ class TestCaseManager:
         # else:
         #     # 查询结果不为空，返回查询得到的时间
 
-    def select_tester_by_plan_or_sheet(self, plan, sheet=None):
-        if sheet:
-            query = "SELECT DISTINCT tester FROM TestSheet WHERE id = %s"
-            self.cursor.execute(query, (sheet,))
+    def select_tester_by_plan_or_sheet(self, plan_id=None, sheet_id=None):
+        if sheet_id:
+            query = "SELECT  tester FROM TestSheet WHERE id = %s"
+            self.cursor.execute(query, (sheet_id,))
         else:
-            query = """
-            SELECT DISTINCT ts.tester
-            FROM TestSheet ts
-            JOIN TestPlan tp ON ts.plan_id = tp.id
-            WHERE tp.plan_name = %s
-            """
-            self.cursor.execute(query, (plan,))
+            query = "SELECT DISTINCT tester FROM TestSheet WHERE plan_id = %s"
+            self.cursor.execute(query, (plan_id,))
         result = self.cursor.fetchall()
         logger.info(result)
         return [tester[0] for tester in result]
@@ -676,3 +695,29 @@ class TestCaseManager:
         case_title = self.cursor.fetchone()
         logger.info(case_title)
         return case_title[0]
+
+    def update_project_workloading_tester(self, plan_name, project=None, workloading=None, tester=None, sheet_id=None):
+        # 建立动态更新的 SQL 语句
+        fields_to_update = []
+        params = []
+        if project:
+            fields_to_update.append("project = %s")
+            params.append(project)
+        if workloading:
+            fields_to_update.append("workloading = %s")
+            params.append(workloading)
+        if tester:
+            fields_to_update.append("tester = %s")
+            params.append(tester)
+        # 如果没有要更新的字段，直接返回
+        if not fields_to_update:
+            return
+        # 更新 testsheet 表
+        if sheet_id:
+            update_query = f"UPDATE testsheet SET {', '.join(fields_to_update)} WHERE id = %s"
+            params.append(sheet_id)
+        else:
+            plan_id = self.select_plan_id(plan_name)
+            update_query = f"UPDATE testsheet SET {', '.join(fields_to_update)} WHERE plan_id = %s"
+            params.append(plan_id)
+        self.cursor.execute(update_query, params)

@@ -119,10 +119,23 @@ class TestAdminPanel(wx.Panel):
         caseSearchSizer.Add(self.sheetLabel, 0, wx.ALL, 5)
         caseSearchSizer.Add(self.sheet_name_combo, 0, wx.ALL, 5)
 
-        self.testerLabel = wx.StaticText(self, label="测试人员:")
-        caseSearchSizer.Add(self.testerLabel, 0, wx.ALL, 5)
+        # 添加修改按钮
+        self.modify_button = wx.Button(self, label="修改")
+        self.modify_button.Bind(wx.EVT_BUTTON, self.on_modify)
+        caseSearchSizer.Add(self.modify_button, 0, wx.CENTER | wx.ALL, 5)
 
         mainSizer.Add(caseSearchSizer, 0, wx.EXPAND)
+        # 新增一行放置测试人员、项目、预估时间的 Label
+        infoSizer = wx.BoxSizer(wx.HORIZONTAL)
+        self.testerLabel = wx.StaticText(self, label="测试人员:")
+        self.projectLabel = wx.StaticText(self, label="项目:")
+        self.timeLabel = wx.StaticText(self, label="预估时间:")
+        infoSizer.Add(self.testerLabel, 0, wx.ALL, 5)
+        infoSizer.AddSpacer(100)
+        infoSizer.Add(self.projectLabel, 0, wx.ALL, 5)
+        infoSizer.AddSpacer(100)
+        infoSizer.Add(self.timeLabel, 0, wx.ALL, 5)
+        mainSizer.Add(infoSizer, 0, wx.EXPAND)
 
         # 创建一个 notebook，用于添加多个面板
         self.notebook = wx.Notebook(self)
@@ -135,7 +148,6 @@ class TestAdminPanel(wx.Panel):
         mainSizer.Add(self.notebook, 1, wx.EXPAND)
 
         self.SetSizer(mainSizer)
-
 
     def on_plan_hover(self, event):
         # 获取当前选择的内容
@@ -156,6 +168,8 @@ class TestAdminPanel(wx.Panel):
         plan_name = self.plan_name_combo.GetValue()
         try:
             plan_id = http_manager.get_params(f'/get_plan_id/{plan_name}').get('plan_id')
+            # 获取并显示统计数据
+            data = http_manager.get_params(f'/calculate_plan_statistics/{plan_id}').get('result')
             sheet_names_with_ids = http_manager.get_params(f'/get_sheet_names_by_admin/{plan_name}').get(
                 'sheet_names_with_ids')
 
@@ -164,11 +178,8 @@ class TestAdminPanel(wx.Panel):
             for sheet_id, sheet_name in sheet_names_with_ids:
                 self.sheet_name_combo.Append(sheet_name, sheet_id)
 
-            # 更新测试人员
-            self.update_tester_label(plan_name=plan_name)
-
-            # 获取并显示统计数据
-            data = http_manager.get_params(f'/calculate_plan_statistics/{plan_id}').get('result')
+            # 更新测试人员和图表
+            self.update_tester_label(data)
             self.count_panel.update_case_counts(data)
             self.percentage_panel.update_percentages(data)
             self.case_time_panel.update_time_counts(data)
@@ -182,22 +193,123 @@ class TestAdminPanel(wx.Panel):
             sheet_id = self.sheet_name_combo.GetClientData(selected_index)
             sheet_name = self.sheet_name_combo.GetString(selected_index)
             try:
-                # 更新测试人员
-                self.update_tester_label(sheet_id=sheet_id)
-
                 # 获取并显示统计数据
                 data = http_manager.get_params(f'/calculate_progress_and_pass_rate/{sheet_id}').get('result')
+                # 更新测试人员及图表
+                self.update_tester_label(data)
                 self.count_panel.update_case_counts(data)
                 self.percentage_panel.update_percentages(data)
                 self.case_time_panel.update_time_counts(data)
             except Exception as e:
                 wx.MessageBox(f'未知错误: {str(e)}', 'Error', wx.OK | wx.ICON_ERROR)
 
-    def update_tester_label(self, plan_name=None, sheet_id=None):
+    def update_tester_label(self, data):
         try:
-            testers = http_manager.get_params('/get_tester', params={'plan_name': plan_name, 'sheet_id': sheet_id}).get(
-                'tester')
-            logger.warning(testers)
-            self.testerLabel.SetLabel(f"测试人员: {testers}")
+            self.testerLabel.SetLabel(f"测试人员: {data['tester']}")
+            self.projectLabel.SetLabel(f"项目: {data['project_name']}")
+            self.timeLabel.SetLabel(f"预估时间: {data['workloading_time']} 分钟")
         except Exception as e:
             wx.MessageBox(f'未知错误: {str(e)}', 'Error', wx.OK | wx.ICON_ERROR)
+
+    def on_modify(self, event):
+        plan_name = self.plan_name_combo.GetValue()
+        sheet_name = self.sheet_name_combo.GetValue()
+
+        if not plan_name:  # 如果未选择测试计划
+            wx.MessageBox('请先选择一个测试计划', '提示', wx.OK | wx.ICON_WARNING)
+            return
+
+        if sheet_name:  # 如果选择了测试用例表
+            selected_index = self.sheet_name_combo.GetSelection()
+            sheet_id = self.sheet_name_combo.GetClientData(selected_index)
+            modify_dialog = ModifyDialog(self, "修改 Sheet 信息", plan_name, sheet_name, sheet_id)
+        else:  # 只选择了测试计划
+            modify_dialog = ModifyDialog(self, "修改测试计划信息", plan_name)
+
+        if modify_dialog.ShowModal() == wx.ID_OK:
+            new_data = modify_dialog.get_values()
+            try:
+                if sheet_name:
+                    data = {
+                        'plan_name': plan_name,
+                        'sheet_id': sheet_id,
+                        'tester': new_data['tester'],
+                        'project': new_data['project'],
+                        'workloading': new_data['workloading'],
+                    }
+                else:
+                    data = {
+                        'plan_name': plan_name,
+                        'tester': new_data['tester'],
+                        'project': new_data['project'],
+                        'workloading': new_data['workloading'],
+                    }
+                http_manager.post_data('update_project_workloading_tester', data=data, token=self.token)
+                wx.MessageBox('修改成功', '提示', wx.OK | wx.ICON_INFORMATION)
+            except Exception as e:
+                wx.MessageBox(f'修改失败: {str(e)}', '错误', wx.OK | wx.ICON_ERROR)
+
+        modify_dialog.Destroy()
+
+
+class ModifyDialog(wx.Dialog):
+    def __init__(self, parent, title, plan_name, sheet_name=None, sheet_id=None):
+        super().__init__(parent, title=title, size=(300, 250))
+        panel = wx.Panel(self)
+        main_sizer = wx.BoxSizer(wx.VERTICAL)
+
+        # 仅添加一次的控件，不重复
+        plan_label = wx.StaticText(panel, label=f"测试计划: {plan_name}")
+        main_sizer.Add(plan_label, 0, wx.ALL, 5)
+
+        if sheet_name:  # 如果有测试用例表，添加显示
+            sheet_label = wx.StaticText(panel, label=f"测试用例表: {sheet_name}")
+            main_sizer.Add(sheet_label, 0, wx.ALL, 5)
+
+        # 创建静态文本和输入框
+        tester_label = wx.StaticText(panel, label="测试人员:")
+        self.tester = wx.TextCtrl(panel, value="", size=(200, -1))
+        main_sizer.Add(tester_label, 0, wx.ALL, 5)
+        main_sizer.Add(self.tester, 0, wx.EXPAND | wx.ALL, 5)
+
+        project_label = wx.StaticText(panel, label="项目:")
+        self.project = wx.TextCtrl(panel, value="", size=(200, -1))
+        main_sizer.Add(project_label, 0, wx.ALL, 5)
+        main_sizer.Add(self.project, 0, wx.EXPAND | wx.ALL, 5)
+
+        workloading_label = wx.StaticText(panel, label="预估时间:")
+        self.workloading = wx.TextCtrl(panel, value="", size=(200, -1))
+        main_sizer.Add(workloading_label, 0, wx.ALL, 5)
+        main_sizer.Add(self.workloading, 0, wx.EXPAND | wx.ALL, 5)
+
+        # OK 和 Cancel 按钮，确保它们的父窗口是 panel
+        button_sizer = wx.BoxSizer(panel.HORIZONTAL)
+        ok_button = wx.Button(panel, wx.ID_OK, label="确定")
+        cancel_button = wx.Button(panel, wx.ID_CANCEL, label="取消")
+        button_sizer.Add(ok_button, 0, wx.ALL, 5)
+        button_sizer.Add(cancel_button, 0, wx.ALL, 5)
+
+        main_sizer.Add(button_sizer, 0, wx.ALIGN_CENTER | wx.ALL, 5)
+
+        # 将布局设置到 panel 上
+        panel.SetSizer(main_sizer)
+
+        # 确保整个对话框根据内容自适应大小
+        self.SetSizerAndFit(main_sizer)
+
+        self.plan_name = plan_name
+        self.sheet_name = sheet_name
+        self.sheet_id = sheet_id
+
+    def get_values(self):
+        return {
+            'tester': self.tester.GetValue(),
+            'project': self.project.GetValue(),
+            'workloading': self.workloading.GetValue(),
+        }
+
+
+
+
+
+
