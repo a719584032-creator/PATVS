@@ -161,7 +161,7 @@ def insert_case_by_power(current_user):
     filename = data.get('filename')
     cases = data.get('cases')
 
-    logger.info(f"Inserting case for plan: {filename}, project: {project_name}, sheet: {sheet_name}")
+    logger.info(f"Inserting case for file: {filename}, project: {project_name}, sheet: {sheet_name}")
 
     if not project_name or not sheet_name or not tester or not workloading or not filename or not cases:
         return jsonify({'error': 'Missing required parameters'}), 400
@@ -684,8 +684,7 @@ def get_case_actions_and_num(case_id):
 
 
 @app.route('/update_project_workloading_tester', methods=['POST'])
-def update_project_workloading_tester(case_id):
-    logger.info(f"get_case_actions_and_num case_id: {case_id} ")
+def update_project_workloading_tester():
     data = request.json
     plan_name = data.get('plan_name')
     project_name = data.get('project_name', None)
@@ -693,17 +692,21 @@ def update_project_workloading_tester(case_id):
     tester = data.get('tester', None)
     sheet_id = data.get('sheet_id', None)
     logger.info(
-        f"update_project_workloading_tester plan_name: {plan_name}, project_name: {project_name} , workloading: {workloading}, tester: {tester}, sheet_id: {sheet_id}")
+        f"update_project_workloading_tester plan_name: {plan_name}")
 
-    if plan_name:
+    if not plan_name:
         return jsonify({'error': 'Missing required parameters'}), 400
     conn = get_db_connection()
     cursor = conn.cursor()
     try:
         manager = TestCaseManager(conn, cursor)
+        if tester:
+            manager.select_userid_by_username(tester)
         manager.update_project_workloading_tester(plan_name, project_name, workloading, tester, sheet_id)
+        conn.commit()
         return jsonify({'message': 'success'}), 200
     except Exception as e:
+        conn.rollback()
         logger.error(f"An error occurred: {e}")
         return jsonify({'error': str(e)}), 500
     finally:
@@ -717,4 +720,4 @@ def get_hello():
 
 
 if __name__ == '__main__':
-    app.run(debug=True, host='127.0.0.1', port=80)
+    app.run(debug=True, host='10.184.32.52', port=80)

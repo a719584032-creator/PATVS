@@ -98,7 +98,7 @@ def load_config(env):
 # config = load_config(ENV)
 # # 配置管理类实例
 # base_url = config.get('base_url')
-base_url = 'http://127.0.0.1'
-#base_url = 'https://10.196.174.33'
+#base_url = 'http://127.0.0.1'
+base_url = 'http://10.184.32.52'
 #base_url = 'https://patvs.lenovo.com'
 http_manager = HttpRequestManager(base_url)

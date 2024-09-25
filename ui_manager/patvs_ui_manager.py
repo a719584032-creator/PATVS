@@ -3,10 +3,8 @@
 import os
 import json
 import time
-
+import itertools
 import pywintypes
-import requests
-import win32process
 import wx
 import wx.grid
 import subprocess
@@ -18,14 +16,12 @@ from monitor_manager.patvs_fuction import Patvs_Fuction
 from openpyxl.styles import PatternFill
 from openpyxl.styles import Font
 from monitor_manager.up_files import run_main
-from monitor_manager.devicerm import Notification
-from common.rw_excel import MyExcel
 from datetime import datetime
 from common.logs import logger
 import win32con
 import win32api
 from requests_manager.http_requests_manager import http_manager
-import win32gui
+
 
 
 def resource_path(relative_path):
@@ -99,10 +95,10 @@ class TestCasesPanel(wx.Panel):
         self.status_button.Bind(wx.EVT_BUTTON, self.check_status)
 
         # 附件按钮
-        annex_icon = wx.Bitmap(resource_path("icon\\附件.png"))
+        annex_icon = wx.Bitmap(resource_path("icon\\game-icons--combination-lock.png"))
         self.annex_button = wx.BitmapButton(self, bitmap=annex_icon)
-        self.annex_button.SetToolTip(wx.ToolTip("上传附件"))
-        self.annex_button.Bind(wx.EVT_BUTTON, self.select_annex)
+        self.annex_button.SetToolTip(wx.ToolTip("排列组合生成器"))
+        self.annex_button.Bind(wx.EVT_BUTTON, self.permutation_and_combination)
 
         # 用例筛选下拉框
         self.plan_name_combo = wx.ComboBox(self, choices=http_manager.get_plan_names(self.username))
@@ -769,8 +765,13 @@ class TestCasesPanel(wx.Panel):
             return
         evt.Skip(True)
 
-    def select_annex(self, event):
-        pass
+    def permutation_and_combination(self, event):
+        """
+        排列工具生成器
+        """
+        dlg = PermutationDialog(self, "排列生成工具")
+        dlg.ShowModal()
+        dlg.Destroy()
 
     def on_download(self, grid, event):
         """
@@ -893,3 +894,86 @@ class TestCasesPanel(wx.Panel):
         滚动到文本框的顶部
         """
         self.content.ScrollLines(-self.content.GetNumberOfLines())
+
+
+class PermutationDialog(wx.Dialog):
+    """
+    排列工具
+    """
+
+    def __init__(self, parent, title):
+        super().__init__(parent, title=title, size=(450, 300))
+
+        panel = wx.Panel(self)
+        main_sizer = wx.BoxSizer(wx.VERTICAL)
+
+        # 端口勾选框
+        self.ports_checkboxes = []
+        ports = ['C1', 'C2', 'C3', 'C4', 'A1', 'A2', 'A3', 'A4']
+        ports_sizer = wx.BoxSizer(wx.HORIZONTAL)
+        for port in ports:
+            cb = wx.CheckBox(panel, label=port)
+            self.ports_checkboxes.append(cb)
+            ports_sizer.Add(cb, 1, wx.ALL, 5)
+
+        main_sizer.Add(wx.StaticText(panel, label="请选择端口:"), 0, wx.ALL, 5)
+        main_sizer.Add(ports_sizer, 0, wx.EXPAND | wx.ALL, 5)
+
+        # 型号输入框
+        main_sizer.Add(wx.StaticText(panel, label="请输入设备型号（每行一个）:"), 0, wx.ALL, 5)
+        self.devices_textctrl = wx.TextCtrl(panel, style=wx.TE_MULTILINE, size=(300, 100))
+        main_sizer.Add(self.devices_textctrl, 1, wx.EXPAND | wx.ALL, 5)
+
+        # 生成按钮
+        generate_button = wx.Button(panel, label="生成排列")
+        generate_button.Bind(wx.EVT_BUTTON, self.on_generate)
+        main_sizer.Add(generate_button, 0, wx.ALIGN_CENTER | wx.ALL, 10)
+
+        panel.SetSizer(main_sizer)
+
+    def on_generate(self, event):
+        # 获取选中的端口
+        selected_ports = [cb.GetLabel() for cb in self.ports_checkboxes if cb.IsChecked()]
+        if not selected_ports:
+            wx.MessageBox("请至少选择一个端口", "提示", wx.OK | wx.ICON_WARNING)
+            return
+
+        # 获取输入的设备型号
+        devices = [device.strip() for device in self.devices_textctrl.GetValue().split('\n') if device.strip()]
+        if len(devices) < len(selected_ports):
+            wx.MessageBox("设备型号的数量不能小于选中的端口数量", "提示", wx.OK | wx.ICON_WARNING)
+            return
+
+        # 生成排列组合
+        combinations = list(itertools.permutations(devices, len(selected_ports)))
+
+        # 显示文件保存对话框，让用户选择保存路径和文件名
+        with wx.FileDialog(self, "保存排列组合", wildcard="Excel files (*.xlsx)|*.xlsx",
+                           style=wx.FD_SAVE | wx.FD_OVERWRITE_PROMPT) as file_dialog:
+
+            if file_dialog.ShowModal() == wx.ID_CANCEL:
+                return  # 用户取消操作
+
+            # 获取用户选择的路径
+            save_path = file_dialog.GetPath()
+        # 创建 Excel 文件并保存
+        try:
+            self.save_to_excel(selected_ports, combinations, save_path)
+            wx.MessageBox(f"排列组合已生成并保存为 {save_path}", "提示", wx.OK | wx.ICON_INFORMATION)
+        except Exception as e:
+            wx.MessageBox(f"保存文件时发生错误: {str(e)}", "错误", wx.OK | wx.ICON_ERROR)
+
+    def save_to_excel(self, columns, data, file_path):
+        # 创建 Excel 工作簿
+        wb = openpyxl.Workbook()
+        ws = wb.active
+
+        # 写入列标题
+        ws.append(columns)
+
+        # 写入数据行
+        for row in data:
+            ws.append(row)
+
+        # 保存文件
+        wb.save(file_path)

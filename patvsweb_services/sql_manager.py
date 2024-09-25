@@ -135,6 +135,7 @@ class TestCaseManager:
 
             if result:
                 # 已经存在相同的 plan_name，获取其 id
+                logger.warning(f"plan_name: {plan_name} 已存在，skipping insertion")
                 plan_id = result[0]
             else:
                 # 插入新的 TestPlan 记录
@@ -225,7 +226,7 @@ class TestCaseManager:
             return []
 
     def select_userid_by_username(self, username):
-        query = "SELECT id FROM User WHERE username = %s"
+        query = "SELECT userId FROM users WHERE username = %s"
         self.cursor.execute(query, (username,))
         result = self.cursor.fetchone()
         logger.info(result)
@@ -711,13 +712,18 @@ class TestCaseManager:
             params.append(tester)
         # 如果没有要更新的字段，直接返回
         if not fields_to_update:
+            logger.warning("没有要更新的字段")
             return
         # 更新 testsheet 表
         if sheet_id:
             update_query = f"UPDATE testsheet SET {', '.join(fields_to_update)} WHERE id = %s"
+            logger.warning("仅更新sheet")
+            logger.warning(update_query)
             params.append(sheet_id)
         else:
             plan_id = self.select_plan_id(plan_name)
             update_query = f"UPDATE testsheet SET {', '.join(fields_to_update)} WHERE plan_id = %s"
+            logger.warning("更新所有计划")
+            logger.warning(update_query)
             params.append(plan_id)
         self.cursor.execute(update_query, params)

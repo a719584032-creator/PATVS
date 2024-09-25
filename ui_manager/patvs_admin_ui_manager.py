@@ -235,16 +235,18 @@ class TestAdminPanel(wx.Panel):
                         'sheet_id': sheet_id,
                         'tester': new_data['tester'],
                         'project': new_data['project'],
-                        'workloading': new_data['workloading'],
+                        'workloading': new_data['workloading']+'(Min)',
                     }
                 else:
                     data = {
                         'plan_name': plan_name,
                         'tester': new_data['tester'],
                         'project': new_data['project'],
-                        'workloading': new_data['workloading'],
+                        'workloading': new_data['workloading']+'(Min)',
                     }
-                http_manager.post_data('update_project_workloading_tester', data=data, token=self.token)
+                logger.warning(data)
+                http_manager.post_data('/update_project_workloading_tester', data=data, token=self.token)
+                self.on_plan_select(plan_name)
                 wx.MessageBox('修改成功', '提示', wx.OK | wx.ICON_INFORMATION)
             except Exception as e:
                 wx.MessageBox(f'修改失败: {str(e)}', '错误', wx.OK | wx.ICON_ERROR)
@@ -277,13 +279,13 @@ class ModifyDialog(wx.Dialog):
         main_sizer.Add(project_label, 0, wx.ALL, 5)
         main_sizer.Add(self.project, 0, wx.EXPAND | wx.ALL, 5)
 
-        workloading_label = wx.StaticText(panel, label="预估时间:")
+        workloading_label = wx.StaticText(panel, label="预估时间(min):")
         self.workloading = wx.TextCtrl(panel, value="", size=(200, -1))
         main_sizer.Add(workloading_label, 0, wx.ALL, 5)
         main_sizer.Add(self.workloading, 0, wx.EXPAND | wx.ALL, 5)
 
-        # OK 和 Cancel 按钮，确保它们的父窗口是 panel
-        button_sizer = wx.BoxSizer(panel.HORIZONTAL)
+        # OK 和 Cancel 按钮
+        button_sizer = wx.BoxSizer(wx.HORIZONTAL)  # 修正此处
         ok_button = wx.Button(panel, wx.ID_OK, label="确定")
         cancel_button = wx.Button(panel, wx.ID_CANCEL, label="取消")
         button_sizer.Add(ok_button, 0, wx.ALL, 5)
@@ -293,9 +295,10 @@ class ModifyDialog(wx.Dialog):
 
         # 将布局设置到 panel 上
         panel.SetSizer(main_sizer)
+        panel.Layout()  # 强制更新布局
 
-        # 确保整个对话框根据内容自适应大小
-        self.SetSizerAndFit(main_sizer)
+        self.SetSize((400, 400))  # 手动设置窗口大小以避免过小
+        self.Centre()  # 窗口居中
 
         self.plan_name = plan_name
         self.sheet_name = sheet_name
@@ -307,6 +310,7 @@ class ModifyDialog(wx.Dialog):
             'project': self.project.GetValue(),
             'workloading': self.workloading.GetValue(),
         }
+
 
 
 

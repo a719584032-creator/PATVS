@@ -17,7 +17,6 @@ import pytz
 import datetime
 from pynput import keyboard
 from cryptography.fernet import Fernet
-import base64
 import os
 import json
 import threading

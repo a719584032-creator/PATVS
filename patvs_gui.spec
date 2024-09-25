@@ -10,8 +10,7 @@ hidden_imports = [
     'loguru',
     'win32api',
     'win32gui',
-    'win32con',
-    'mysql.connector'
+    'win32con'
 ]
 
 a = Analysis(
