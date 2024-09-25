@@ -122,6 +122,24 @@ def monitor_keystrokes(cycles,  key_name=None):
     with keyboard.Listener(on_press=on_press) as listener:
         listener.join()
 
+stop_event = True
+def monitor_keystrokes2(target_cycles):
+    key_count = 0
+    while stop_event:
+        def on_press(key):
+            nonlocal key_count
+            key_count += 1
+            print(f"Key pressed: {key}. Total count: {key_count}")
+
+            if key_count >= target_cycles:
+                print("Reached target keystroke count. Exiting...")
+
+                return False  # Stop the listener
+
+
+        # Collect events until the target keystroke count is reached
+        with keyboard.Listener(on_press=on_press) as listener:
+            listener.join()
 
 if __name__ == "__main__":
-    monitor_keystrokes(100,'\\')
+    monitor_keystrokes2(100)

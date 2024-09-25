@@ -13,17 +13,18 @@ class HttpRequestManager:
     def get_params(self, endpoint, params=None, token=None):
         try:
             headers = {'x-access-tokens': token}
-            response = requests.get(f'{self.base_url}{endpoint}', params=params, headers=headers)
+            response = requests.get(f'{self.base_url}{endpoint}', params=params, headers=headers, verify=False)
             response.raise_for_status()
             return response.json()
         except requests.RequestException as e:
             logger.error(f'HTTP GET request to {endpoint} failed: {e}')
             raise
 
+
     def post_data(self, endpoint, data=None, token=None):
         try:
             headers = {'x-access-tokens': token}
-            response = requests.post(url=f'{self.base_url}{endpoint}', json=data, headers=headers)
+            response = requests.post(url=f'{self.base_url}{endpoint}', json=data, headers=headers, verify=False)
             response.raise_for_status()
             return response.json()
         except requests.RequestException as e:
@@ -33,7 +34,7 @@ class HttpRequestManager:
     def get_plan_names(self, username, token=None):
         try:
             headers = {'x-access-tokens': token}
-            response = requests.get(f'{self.base_url}/get_plan_names/{username}', headers=headers)
+            response = requests.get(f'{self.base_url}/get_plan_names/{username}', headers=headers, verify=False)
             response.raise_for_status()
             data = response.json()
             return data.get('plan_names')
@@ -45,7 +46,7 @@ class HttpRequestManager:
         try:
             headers = {'x-access-tokens': token}
             params = {'plan_name': plan_name, 'username': username}
-            response = requests.get(f'{self.base_url}/get_sheet_names', params=params, headers=headers)
+            response = requests.get(f'{self.base_url}/get_sheet_names', params=params, headers=headers, verify=False)
             response.raise_for_status()
             data = response.json()
             return data.get('sheet_names_with_ids')
@@ -57,7 +58,7 @@ class HttpRequestManager:
         data = {'case_id': case_id, 'case_result': case_result, 'comment': input_content}
         try:
             headers = {'x-access-tokens': token}
-            response = requests.post(f'{self.base_url}/update_end_time', json=data, headers=headers)
+            response = requests.post(f'{self.base_url}/update_end_time', json=data, headers=headers, verify=False)
             response.raise_for_status()
             return response.json()
         except requests.RequestException as e:
@@ -67,7 +68,7 @@ class HttpRequestManager:
     def get_start_time(self, case_id, token=None):
         try:
             headers = {'x-access-tokens': token}
-            response = requests.get(f'{self.base_url}/get_start_time/{case_id}', headers=headers)
+            response = requests.get(f'{self.base_url}/get_start_time/{case_id}', headers=headers, verify=False)
             response.raise_for_status()
             data = response.json()
             logger.warning(data)
@@ -79,7 +80,7 @@ class HttpRequestManager:
     def get_cases_by_sheet_id(self, sheet_id, token=None):
         try:
             headers = {'x-access-tokens': token}
-            response = requests.get(f'{self.base_url}/get_cases/{sheet_id}', headers=headers)
+            response = requests.get(f'{self.base_url}/get_cases/{sheet_id}', headers=headers, verify=False)
             response.raise_for_status()
             data = response.json()
             return data
@@ -97,6 +98,7 @@ def load_config(env):
 # config = load_config(ENV)
 # # 配置管理类实例
 # base_url = config.get('base_url')
+#base_url = 'http://127.0.0.1'
 base_url = 'http://10.184.32.52'
-#base_url = 'http://10.184.44.87'
+#base_url = 'https://patvs.lenovo.com'
 http_manager = HttpRequestManager(base_url)

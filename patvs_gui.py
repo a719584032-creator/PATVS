@@ -10,7 +10,7 @@ from requests_manager.http_requests_manager import http_manager
 import json
 import base64
 
-directory = "D:\\PATVS"
+directory = "C:\\PATVS"
 if not os.path.exists(directory):
     os.makedirs(directory)
 file_dir = directory + '/credentials.json'
@@ -183,9 +183,9 @@ class MainApp(wx.App):
             role = login_dialog.logged_in_role  # 获取用户角色
 
             if role == 'admin':
-                frame = AdminWindow(None, title="PATVS-Admin", token=token)
+                frame = AdminWindow(None, title="Test Tracking System-Admin", token=token)
             else:
-                frame = MainWindow(None, title="PATVS-1.0.0.8", username=username, token=token)
+                frame = MainWindow(None, title="Test Tracking System-1.0.3", username=username, token=token)
 
             self.SetTopWindow(frame)
             frame.Show(True)

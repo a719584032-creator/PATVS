@@ -17,7 +17,6 @@ import pytz
 import datetime
 from pynput import keyboard
 from cryptography.fernet import Fernet
-import base64
 import os
 import json
 import threading
@@ -25,7 +24,7 @@ import win32api
 
 
 class Patvs_Fuction():
-    TEMP_FILE = r"D:\PATVS\temp_action_and_num.json"
+    TEMP_FILE = r"C:\PATVS\temp_action_and_num.json"
     ENCRYPTION_KEY = b'JZfpG9N5K4PQoQMtImxPv80DS-D-WPXr9DN0eF7zhR4='  # 32 bytes URL-safe base64-encoded key
     # 定义按键映射字典，将用户友好的名称映射到 pynput 的按键
     KEY_MAPPING = {
@@ -220,40 +219,74 @@ class Patvs_Fuction():
             return total
 
     def test_count_s3_sleep_events(self, start_time, target_cycles):
-        hand = win32evtlog.OpenEventLog(None, "System")
+        def reopen_event_log():
+            """尝试打开事件日志句柄，返回句柄或 None"""
+            try:
+                return win32evtlog.OpenEventLog(None, "System")
+            except Exception as e:
+                wx.CallAfter(self.window.add_log_message, f"Failed to open event log: {e}")
+                return None
+
+        hand = reopen_event_log()
+        if hand is None:
+            return  # 如果无法打开句柄，退出
+
         flags = win32evtlog.EVENTLOG_FORWARDS_READ | win32evtlog.EVENTLOG_SEQUENTIAL_READ
         total = 0
         log_num = 0
         start_time = datetime.datetime.strptime(start_time, "%Y-%m-%d %H:%M:%S")
+
         try:
             while self.stop_event:
-                events = win32evtlog.ReadEventLog(hand, flags, 0)
-                if not events:
-                    # 重新打开句柄获取监控开始后产生的新S4日志
-                    hand = win32evtlog.OpenEventLog(None, "System")
-                    log_num = total
-                    total = 0
-                    time.sleep(3)
-                for event in events:
-                    if event.EventID == 507 or event.EventID == 107:
-                        occurred_time_str = str(event.TimeGenerated)
+                if not hand:  # 检查句柄是否有效
+                    hand = reopen_event_log()
+                    if hand is None:
+                        time.sleep(1)
+                        continue
+                try:
+                    events = win32evtlog.ReadEventLog(hand, flags, 0)
+                    if not events:
+                        # 关闭当前句柄并重新打开
+                        win32evtlog.CloseEventLog(hand)
+                        hand = reopen_event_log()
+                        total = 0
+                        time.sleep(1)
+                        continue
+                except Exception as e:
+                    logger.warning(f"Error reading event log: {e}")
+                    if hand:
                         try:
-                            occurred_time = datetime.datetime.strptime(occurred_time_str, "%Y/%m/%d %H:%M:%S")
-                        except ValueError:
-                            occurred_time = datetime.datetime.strptime(occurred_time_str, "%Y-%m-%d %H:%M:%S")
+                            win32evtlog.CloseEventLog(hand)
+                        except Exception as close_e:
+                            logger.warning(f"Error closing event log: {close_e}")
+                    hand = reopen_event_log()
+                    total = 0
+                    time.sleep(1)
+                    continue
+
+                for event in events:
+                    if event.EventID in (507, 107):
+                        occurred_time = event.TimeGenerated
                         if occurred_time > start_time:
                             total += 1
-                            # 仅输出增量日志
-                            if total > log_num:
-                                wx.CallAfter(self.window.add_log_message,
-                                             f"当前已测试 {total} 次，目标次数为 {target_cycles} 次。")
-                            if total >= target_cycles:
-                                wx.CallAfter(self.window.add_log_message,
-                                             f"Reached target cycles. S3 sleep events: {total}")
-                                return
+
+                # 输出增量日志，如果total比上一次记录的last_total大，则说明有新日志
+                if total > log_num:
+                    wx.CallAfter(self.window.add_log_message,
+                                 f"当前已测试 {total} 次，目标次数为 {target_cycles} 次。")
+                    log_num = total
+
+                if total >= target_cycles:
+                    wx.CallAfter(self.window.add_log_message,
+                                 f"Reached target cycles. S3 sleep events: {total}")
+                    return
         finally:
+            if hand:
+                try:
+                    win32evtlog.CloseEventLog(hand)
+                except Exception as e:
+                    logger.warning(f"S3 Final close error: {e}")
             wx.CallAfter(self.window.add_log_message, "Stopped monitoring S3 sleep events.")
-            win32evtlog.CloseEventLog(hand)
             self.action_complete.set()  # 设置动作完成状态
 
     def get_event_data(self, event):
@@ -281,20 +314,50 @@ class Patvs_Fuction():
             return None
 
     def test_count_s4_sleep_events(self, start_time, target_cycles):
-        hand = win32evtlog.OpenEventLog(None, "System")
+        def reopen_event_log():
+            """尝试打开事件日志句柄，返回句柄或 None"""
+            try:
+                return win32evtlog.OpenEventLog(None, "System")
+            except Exception as e:
+                wx.CallAfter(self.window.add_log_message, f"Failed to open event log: {e}")
+                return None
+
+        hand = reopen_event_log()
+        if hand is None:
+            return  # 如果无法打开句柄，退出
+
         flags = win32evtlog.EVENTLOG_FORWARDS_READ | win32evtlog.EVENTLOG_SEQUENTIAL_READ
         total = 0
         log_num = 0
         start_time = datetime.datetime.strptime(start_time, "%Y-%m-%d %H:%M:%S")
         try:
             while self.stop_event:
-                events = win32evtlog.ReadEventLog(hand, flags, 0)
-                if not events:
-                    # 重新打开句柄获取增量日志
-                    hand = win32evtlog.OpenEventLog(None, "System")
-                    log_num = total
+                if not hand:  # 检查句柄是否有效
+                    hand = reopen_event_log()
+                    if hand is None:
+                        time.sleep(1)
+                        continue
+                try:
+                    events = win32evtlog.ReadEventLog(hand, flags, 0)
+                    if not events:
+                        # 关闭当前句柄并重新打开
+                        win32evtlog.CloseEventLog(hand)
+                        hand = reopen_event_log()
+                        total = 0
+                        time.sleep(1)
+                        continue
+                except Exception as e:
+                    logger.warning(f"Error reading event log: {e}")
+                    if hand:
+                        try:
+                            win32evtlog.CloseEventLog(hand)
+                        except Exception as close_e:
+                            logger.warning(f"Error closing event log: {close_e}")
+                    hand = reopen_event_log()
                     total = 0
-                    time.sleep(3)
+                    time.sleep(1)
+                    continue
+
                 for event in events:
                     if event.EventID == 1:
                         # 解析 EventData 获取 SleepTime 和 WakeTime
@@ -302,9 +365,9 @@ class Patvs_Fuction():
                         sleep_time = None
                         wake_time = None
                         for line in event_data.split('\n'):
-                            if "睡眠时间" in line:
+                            if "睡眠时间" in line or "Sleep Time" in line:
                                 sleep_time = self.parse_time(line.split(": ")[1])
-                            elif "唤醒时间" in line:
+                            elif "唤醒时间" in line or "Wake Time" in line:
                                 wake_time = self.parse_time(line.split(": ")[1])
                         # 统计S4事件次数
                         if sleep_time and wake_time:
@@ -321,7 +384,11 @@ class Patvs_Fuction():
                                     return
         finally:
             wx.CallAfter(self.window.add_log_message, "Stopped monitoring S4 sleep events.")
-            win32evtlog.CloseEventLog(hand)
+            if hand:
+                try:
+                    win32evtlog.CloseEventLog(hand)
+                except Exception as e:
+                    logger.warning(f"S4 Final close error: {e}")
             self.action_complete.set()  # 设置动作完成状态
 
     def start_monitoring_s3_and_power(self, target_cycles):
@@ -351,20 +418,49 @@ class Patvs_Fuction():
         wx.CallAfter(self.window.after_test)
 
     def test_count_s5_sleep_events(self, start_time, target_cycles):
-        hand = win32evtlog.OpenEventLog(None, "System")
-        flags = win32evtlog.EVENTLOG_BACKWARDS_READ | win32evtlog.EVENTLOG_SEQUENTIAL_READ
+        def reopen_event_log():
+            """尝试打开事件日志句柄，返回句柄或 None"""
+            try:
+                return win32evtlog.OpenEventLog(None, "System")
+            except Exception as e:
+                wx.CallAfter(self.window.add_log_message, f"Failed to open event log: {e}")
+                return None
+
+        hand = reopen_event_log()
+        if hand is None:
+            return  # 如果无法打开句柄，退出
+        flags = win32evtlog.EVENTLOG_FORWARDS_READ | win32evtlog.EVENTLOG_SEQUENTIAL_READ
         total = 0
         log_num = 0
         start_time = datetime.datetime.strptime(start_time, "%Y-%m-%d %H:%M:%S")
         try:
             while self.stop_event:
-                events = win32evtlog.ReadEventLog(hand, flags, 0)
-                if not events:
-                    # 重新打开句柄获取监控开始后产生的新S4日志
-                    hand = win32evtlog.OpenEventLog(None, "System")
-                    log_num = total
+                if not hand:  # 检查句柄是否有效
+                    hand = reopen_event_log()
+                    if hand is None:
+                        time.sleep(1)
+                        continue
+                try:
+                    events = win32evtlog.ReadEventLog(hand, flags, 0)
+                    if not events:
+                        # 关闭当前句柄并重新打开
+                        win32evtlog.CloseEventLog(hand)
+                        hand = reopen_event_log()
+                        total = 0
+                        time.sleep(1)
+                        continue
+                except Exception as e:
+                    logger.warning(f"Error reading event log: {e}")
+                    if hand:
+                        try:
+                            win32evtlog.CloseEventLog(hand)
+                        except Exception as close_e:
+                            logger.warning(f"Error closing event log: {close_e}")
+                    hand = reopen_event_log()
                     total = 0
-                    time.sleep(3)
+                    time.sleep(1)
+                    continue
+
                 for event in events:
                     if event.EventID == 7001:
                         occurred_time_str = str(event.TimeGenerated)
@@ -382,24 +478,56 @@ class Patvs_Fuction():
                                 return
         finally:
             wx.CallAfter(self.window.add_log_message, "Stopped monitoring S5 sleep events.")
-            win32evtlog.CloseEventLog(hand)
+            if hand:
+                try:
+                    win32evtlog.CloseEventLog(hand)
+                except Exception as e:
+                    logger.warning(f"S5 Final close error: {e}")
             self.action_complete.set()  # 设置动作完成状态
 
     def test_count_restart_events(self, start_time, target_cycles):
-        hand = win32evtlog.OpenEventLog(None, "System")
-        flags = win32evtlog.EVENTLOG_BACKWARDS_READ | win32evtlog.EVENTLOG_SEQUENTIAL_READ
+        def reopen_event_log():
+            """尝试打开事件日志句柄，返回句柄或 None"""
+            try:
+                return win32evtlog.OpenEventLog(None, "System")
+            except Exception as e:
+                wx.CallAfter(self.window.add_log_message, f"Failed to open event log: {e}")
+                return None
+
+        hand = reopen_event_log()
+        if hand is None:
+            return  # 如果无法打开句柄，退出
+        flags = win32evtlog.EVENTLOG_FORWARDS_READ | win32evtlog.EVENTLOG_SEQUENTIAL_READ
         total = 0
         log_num = 0
         start_time = datetime.datetime.strptime(start_time, "%Y-%m-%d %H:%M:%S")
         try:
             while self.stop_event:
-                events = win32evtlog.ReadEventLog(hand, flags, 0)
-                if not events:
-                    # 重新打开句柄获取监控开始后产生的新S4日志
-                    hand = win32evtlog.OpenEventLog(None, "System")
-                    log_num = total
+                if not hand:  # 检查句柄是否有效
+                    hand = reopen_event_log()
+                    if hand is None:
+                        time.sleep(1)
+                        continue
+                try:
+                    events = win32evtlog.ReadEventLog(hand, flags, 0)
+                    if not events:
+                        # 关闭当前句柄并重新打开
+                        win32evtlog.CloseEventLog(hand)
+                        hand = reopen_event_log()
+                        total = 0
+                        time.sleep(1)
+                        continue
+                except Exception as e:
+                    logger.warning(f"Error reading event log: {e}")
+                    if hand:
+                        try:
+                            win32evtlog.CloseEventLog(hand)
+                        except Exception as close_e:
+                            logger.warning(f"Error closing event log: {close_e}")
+                    hand = reopen_event_log()
                     total = 0
-                    time.sleep(3)
+                    time.sleep(1)
+                    continue
                 for event in events:
                     event_id = event.EventID & 0xFFFF  # 掩码EventID以获取实际值
                     if event_id == 1074:
@@ -417,7 +545,11 @@ class Patvs_Fuction():
                                 return
         finally:
             wx.CallAfter(self.window.add_log_message, "Stopped monitoring ReStart sleep events.")
-            win32evtlog.CloseEventLog(hand)
+            if hand:
+                try:
+                    win32evtlog.CloseEventLog(hand)
+                except Exception as e:
+                    logger.warning(f"restart Final close error: {e}")
             self.action_complete.set()  # 设置动作完成状态
 
     def monitor_device_plug_changes(self, target_cycles):
@@ -430,21 +562,79 @@ class Patvs_Fuction():
         self.action_complete.set()  # 设置动作完成状态
 
     def monitor_keystrokes(self, target_cycles, key_name=None):
+        """
+        监控任意按键
+        """
+        try:
+            key_count = 0
+            listener_stopped = threading.Event()  # 用于指示监听器是否已经停止
+
+            def on_press(pressed_key):
+                nonlocal key_count
+                key_count += 1
+                wx.CallAfter(self.window.add_log_message, f"Key pressed: {pressed_key}. Total count: {key_count}")
+
+                if key_count >= target_cycles:
+                    wx.CallAfter(self.window.add_log_message, "Reached target keystroke count. Exiting...")
+                    listener_stopped.set()  # 设置监听器已停止的事件
+                    return False  # Stop the listener
+
+            def stop_listener(listener):
+                # 定期检查 stop_event 和 listener_stopped
+                while self.stop_event and not listener_stopped.is_set():
+                    time.sleep(0.1)  # 检查间隔
+
+                if not listener_stopped.is_set():  # 如果监听器还没停，则停止它
+                    wx.CallAfter(self.window.add_log_message, "Stop event triggered. Exiting listener...")
+                    listener.stop()  # 立即停止监听器
+                    listener_stopped.set()  # 确保事件被设置
+
+            with keyboard.Listener(on_press=on_press) as listener:
+                # 启动后台线程以检查 stop_event
+                stop_thread = threading.Thread(target=stop_listener, args=(listener,))
+                stop_thread.start()
+                listener.join()  # 等待监听器停止
+                stop_thread.join()  # 等待后台线程停止
+        finally:
+            wx.CallAfter(self.window.add_log_message, "Stopped monitoring keystrokes.")
+            self.action_complete.set()  # 设置动作完成状态
+
+    def monitor_keystrokes2(self, target_cycles, key_name=None):
+        """
+        监控具体按键
+        """
         try:
             key_count = 0
             key = self.KEY_MAPPING.get(key_name.lower()) if key_name else None
+            listener_stopped = threading.Event()  # 用于指示监听器是否已经停止
 
             def on_press(pressed_key):
                 nonlocal key_count
                 if key is None or pressed_key == key:
                     key_count += 1
-                    wx.CallAfter(self.window.add_log_message, f"Key pressed: {key}. Total count: {key_count}")
-                if key_count >= target_cycles or not self.stop_event:
+                    wx.CallAfter(self.window.add_log_message, f"Key pressed: {pressed_key}. Total count: {key_count}")
+
+                if key_count >= target_cycles:
                     wx.CallAfter(self.window.add_log_message, "Reached target keystroke count. Exiting...")
+                    listener_stopped.set()  # 设置监听器已停止的事件
                     return False  # Stop the listener
-            # Collect events until the target keystroke count is reached
+
+            def stop_listener(listener):
+                # 定期检查 stop_event 和 listener_stopped
+                while self.stop_event and not listener_stopped.is_set():
+                    time.sleep(0.1)  # 检查间隔
+
+                if not listener_stopped.is_set():  # 如果监听器还没停，则停止它
+                    wx.CallAfter(self.window.add_log_message, "Stop event triggered. Exiting listener...")
+                    listener.stop()  # 立即停止监听器
+                    listener_stopped.set()  # 确保事件被设置
+
             with keyboard.Listener(on_press=on_press) as listener:
-                listener.join()
+                # 启动后台线程以检查 stop_event
+                stop_thread = threading.Thread(target=stop_listener, args=(listener,))
+                stop_thread.start()
+                listener.join()  # 等待监听器停止
+                stop_thread.join()  # 等待后台线程停止
         finally:
             wx.CallAfter(self.window.add_log_message, "Stopped monitoring keystrokes.")
             self.action_complete.set()  # 设置动作完成状态
@@ -508,78 +698,84 @@ class Patvs_Fuction():
         return action.lower().replace(" ", "")
 
     def run_main(self, case_id, action_and_num, start_time):
-        self.case_id = case_id
-        self.remaining_actions = self.load_remaining_actions()
-        if not self.remaining_actions:
-            self.remaining_actions = action_and_num
+        try:
+            self.case_id = case_id
+            self.remaining_actions = self.load_remaining_actions()
+            if not self.remaining_actions:
+                self.remaining_actions = action_and_num
 
-        # 显示日志信息
-        wx.CallAfter(self.window.add_log_message, f"请按照提示依次执行以下动作:")
-        for action, test_num in action_and_num:
-            if action == '时间':
-                wx.CallAfter(self.window.add_log_message, f"您选择的动作是: {action}，目标测试时间: {test_num} min")
-            else:
-                wx.CallAfter(self.window.add_log_message, f"您选择的动作是: {action}，目标测试次数: {test_num}")
-        for action, test_num in self.remaining_actions:
-            action = self.normalize_action(action)
-            test_num = int(test_num)
-            # 在每个动作开始前更新临时文件
-            self.save_remaining_actions()
-            # 清除上一个动作的完成状态
-            self.action_complete.clear()
-            if '时间' in action:
-                wx.CallAfter(self.window.add_log_message, f"开始执行监控时间，目标测试时间: {test_num} min")
-                threading.Thread(target=self.monitor_time, args=(test_num,)).start()
-            elif action == '电源插拔':
-                wx.CallAfter(self.window.add_log_message, f"开始执行监控: {action}，目标测试次数: {test_num}")
-                threading.Thread(target=self.monitor_power_plug_changes, args=(test_num,)).start()
-            elif action.lower() == 'usb插拔':
-                wx.CallAfter(self.window.add_log_message, f"开始执行监控: {action}，目标测试次数: {test_num}")
-                thread = threading.Thread(target=self.monitor_device_plug_changes, args=(test_num,))
-                thread.start()
-                # 获取线程ID
-                self.msg_loop_thread_id = thread.ident
-            elif action == '键盘按键':
-                wx.CallAfter(self.window.add_log_message, f"开始执行监控: {action}，目标测试次数: {test_num}")
-                threading.Thread(target=self.monitor_keystrokes, args=(test_num,)).start()
-            elif action == '锁屏':
-                wx.CallAfter(self.window.add_log_message, f"开始执行监控: {action}，目标测试次数: {test_num}")
-                thread = threading.Thread(target=self.monitor_lock_screen_changes, args=(test_num,))
-                thread.start()
-                # 获取线程ID
-                self.msg_loop_thread_id = thread.ident
-            elif action == '鼠标点击':
-                wx.CallAfter(self.window.add_log_message, f"开始执行监控: {action}，目标测试次数: {test_num}")
-                threading.Thread(target=self.monitor_mouse_clicks, args=(test_num,)).start()
-            elif action == 's3':
-                wx.CallAfter(self.window.add_log_message, f"开始执行监控: {action}，目标测试次数: {test_num}")
-                threading.Thread(target=self.test_count_s3_sleep_events, args=(start_time, test_num,)).start()
-            elif action == 's4':
-                wx.CallAfter(self.window.add_log_message, f"开始执行监控: {action}，目标测试次数: {test_num}")
-                threading.Thread(target=self.test_count_s4_sleep_events, args=(start_time, test_num,)).start()
-            elif action == 's5':
-                wx.CallAfter(self.window.add_log_message, f"开始执行监控: {action}，目标测试次数: {test_num}")
-                threading.Thread(target=self.test_count_s5_sleep_events, args=(start_time, test_num,)).start()
-            elif action == 'restart':
-                wx.CallAfter(self.window.add_log_message, f"开始执行监控: {action}，目标测试次数: {test_num}")
-                threading.Thread(target=self.test_count_restart_events, args=(start_time, test_num,)).start()
-            elif self.KEY_MAPPING.get(action.lower()):
-                wx.CallAfter(self.window.add_log_message, f"开始执行监控按键: {action}，目标测试次数: {test_num}")
-                threading.Thread(target=self.monitor_keystrokes, args=(test_num, action,)).start()
-            # 等待当前监控动作完成
-            self.action_complete.wait()
-            wx.CallAfter(self.window.add_log_message, f"动作 {action} 完成")
-            # 动作完成后，移除已执行的动作并保存
-            self.remaining_actions = self.remaining_actions[1:]
-            self.save_remaining_actions()
-
-        # 检查是否有剩余的动作
-        if not self.remaining_actions:
-            logger.warning("所有动作执行完毕，开始删除临时文件")
-            self.remove_temp_file()
-        logger.warning("所有动作执行完毕，解禁按钮")
-        wx.CallAfter(self.window.after_test)
-
+            # 显示日志信息
+            wx.CallAfter(self.window.add_log_message, f"请按照提示依次执行以下动作:")
+            for action, test_num in action_and_num:
+                if action == '时间':
+                    wx.CallAfter(self.window.add_log_message, f"您选择的动作是: {action}，目标测试时间: {test_num} min")
+                else:
+                    wx.CallAfter(self.window.add_log_message, f"您选择的动作是: {action}，目标测试次数: {test_num}")
+            for action, test_num in self.remaining_actions:
+                if self.stop_event:
+                    action = self.normalize_action(action)
+                    test_num = int(test_num)
+                    # 在每个动作开始前更新临时文件
+                    self.save_remaining_actions()
+                    # 清除上一个动作的完成状态
+                    self.action_complete.clear()
+                    if '时间' in action:
+                        wx.CallAfter(self.window.add_log_message, f"开始执行监控时间，目标测试时间: {test_num} min")
+                        threading.Thread(target=self.monitor_time, args=(test_num,)).start()
+                    elif action == '电源插拔':
+                        wx.CallAfter(self.window.add_log_message, f"开始执行监控: {action}，目标测试次数: {test_num}")
+                        threading.Thread(target=self.monitor_power_plug_changes, args=(test_num,)).start()
+                    elif action.lower() == 'usb插拔':
+                        wx.CallAfter(self.window.add_log_message, f"开始执行监控: {action}，目标测试次数: {test_num}")
+                        thread = threading.Thread(target=self.monitor_device_plug_changes, args=(test_num,))
+                        thread.start()
+                        # 获取线程ID
+                        self.msg_loop_thread_id = thread.ident
+                    elif action == '键盘按键':
+                        wx.CallAfter(self.window.add_log_message, f"开始执行监控: {action}，目标测试次数: {test_num}")
+                        threading.Thread(target=self.monitor_keystrokes, args=(test_num,)).start()
+                    elif action == '锁屏':
+                        wx.CallAfter(self.window.add_log_message, f"开始执行监控: {action}，目标测试次数: {test_num}")
+                        thread = threading.Thread(target=self.monitor_lock_screen_changes, args=(test_num,))
+                        thread.start()
+                        # 获取线程ID
+                        self.msg_loop_thread_id = thread.ident
+                    elif action == '鼠标点击':
+                        wx.CallAfter(self.window.add_log_message, f"开始执行监控: {action}，目标测试次数: {test_num}")
+                        threading.Thread(target=self.monitor_mouse_clicks, args=(test_num,)).start()
+                    elif action == 's3':
+                        wx.CallAfter(self.window.add_log_message, f"开始执行监控: {action}，目标测试次数: {test_num}")
+                        threading.Thread(target=self.test_count_s3_sleep_events, args=(start_time, test_num,)).start()
+                    elif action == 's4':
+                        wx.CallAfter(self.window.add_log_message, f"开始执行监控: {action}，目标测试次数: {test_num}")
+                        threading.Thread(target=self.test_count_s4_sleep_events, args=(start_time, test_num,)).start()
+                    elif action == 's5':
+                        wx.CallAfter(self.window.add_log_message, f"开始执行监控: {action}，目标测试次数: {test_num}")
+                        threading.Thread(target=self.test_count_s5_sleep_events, args=(start_time, test_num,)).start()
+                    elif action == 'restart':
+                        wx.CallAfter(self.window.add_log_message, f"开始执行监控: {action}，目标测试次数: {test_num}")
+                        threading.Thread(target=self.test_count_restart_events, args=(start_time, test_num,)).start()
+                    elif action.lower() in self.KEY_MAPPING:
+                        wx.CallAfter(self.window.add_log_message, f"开始执行监控按键: {action}，目标测试次数: {test_num}")
+                        threading.Thread(target=self.monitor_keystrokes2, args=(test_num, action,)).start()
+                    # 等待当前监控动作完成
+                    self.action_complete.wait()
+                    wx.CallAfter(self.window.add_log_message, f"动作 {action} 完成")
+                    # 动作完成后，移除已执行的动作并保存
+                    self.remaining_actions = self.remaining_actions[1:]
+                    self.save_remaining_actions()
+                else:
+                    logger.warning("事项block，退出执行")
+                    self.remaining_actions = []
+            # 检查是否有剩余的动作
+            if not self.remaining_actions:
+                logger.warning("所有动作执行完毕，开始删除临时文件")
+                self.remove_temp_file()
+            logger.warning("所有动作执行完毕，解禁按钮")
+            time.sleep(1)
+            wx.CallAfter(self.window.after_test)
+        except Exception as e:
+            logger.error(f"未知错误: {e}")
     def on_close(self, event):
         self.save_remaining_actions()
         self.window.Destroy()

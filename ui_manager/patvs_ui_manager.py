@@ -2,10 +2,9 @@
 # 负责GUI界面展示以及交互逻辑
 import os
 import json
-
+import time
+import itertools
 import pywintypes
-import requests
-import win32process
 import wx
 import wx.grid
 import subprocess
@@ -17,14 +16,12 @@ from monitor_manager.patvs_fuction import Patvs_Fuction
 from openpyxl.styles import PatternFill
 from openpyxl.styles import Font
 from monitor_manager.up_files import run_main
-from monitor_manager.devicerm import Notification
-from common.rw_excel import MyExcel
 from datetime import datetime
 from common.logs import logger
 import win32con
 import win32api
 from requests_manager.http_requests_manager import http_manager
-import win32gui
+
 
 
 def resource_path(relative_path):
@@ -98,18 +95,20 @@ class TestCasesPanel(wx.Panel):
         self.status_button.Bind(wx.EVT_BUTTON, self.check_status)
 
         # 附件按钮
-        annex_icon = wx.Bitmap(resource_path("icon\\附件.png"))
+        annex_icon = wx.Bitmap(resource_path("icon\\game-icons--combination-lock.png"))
         self.annex_button = wx.BitmapButton(self, bitmap=annex_icon)
-        self.annex_button.SetToolTip(wx.ToolTip("上传附件"))
-        self.annex_button.Bind(wx.EVT_BUTTON, self.select_annex)
+        self.annex_button.SetToolTip(wx.ToolTip("排列组合生成器"))
+        self.annex_button.Bind(wx.EVT_BUTTON, self.permutation_and_combination)
 
         # 用例筛选下拉框
         self.plan_name_combo = wx.ComboBox(self, choices=http_manager.get_plan_names(self.username))
         self.plan_name_combo.Bind(wx.EVT_COMBOBOX, self.on_plan_select)
+        self.plan_name_combo.Bind(wx.EVT_MOTION, self.on_plan_hover)
 
         # 添加新的下拉框用于显示 sheet_name
         self.sheet_name_combo = wx.ComboBox(self)
         self.sheet_name_combo.Bind(wx.EVT_COMBOBOX, self.on_sheet_select)
+        self.sheet_name_combo.Bind(wx.EVT_MOTION, self.on_sheet_hover)
 
         # 创建一个字体对象，字体大小为16，字体家族为瑞士，风格为正常，但是字体粗细为加粗
         font = wx.Font(12, wx.SWISS, wx.NORMAL, wx.NORMAL)
@@ -222,7 +221,7 @@ class TestCasesPanel(wx.Panel):
         self.testCases = None
         self.sheet_id = None
         self.CaseID = None
-        self.tree.Bind(wx.EVT_TREE_SEL_CHANGED, self.OnSelChanged)
+        self.tree.Bind(wx.EVT_TREE_SEL_CHANGED, self.case_details)
         # 如果有记录，显示上一次打开的页面
         self.restore_state()
 
@@ -270,10 +269,26 @@ class TestCasesPanel(wx.Panel):
         if selected_index != wx.NOT_FOUND:
             self.sheet_id = self.sheet_name_combo.GetClientData(selected_index)
             self.sheet_name = self.sheet_name_combo.GetString(selected_index)
-            self.PopulateTree(self.sheet_id, self.sheet_name)  # 使用 sheet_id 获取用例树
+            self.case_tree(self.sheet_id, self.sheet_name)  # 使用 sheet_id 获取用例树
             self.tree.Show()  # 选择用例表后显示用例树
             # 更新统计信息
             self.update_statistics()
+            self.CaseID = None
+
+    # 绑定鼠标悬停事件的处理函数
+    def on_plan_hover(self, event):
+        # 获取当前选择的内容
+        selection = self.plan_name_combo.GetStringSelection()
+        if selection:
+            self.plan_name_combo.SetToolTip(selection)
+        event.Skip()
+
+    def on_sheet_hover(self, event):
+        # 获取当前选择的内容
+        selection = self.sheet_name_combo.GetStringSelection()
+        if selection:
+            self.sheet_name_combo.SetToolTip(selection)
+        event.Skip()
 
     def clear_statistics(self):
         # 清空统计信息
@@ -322,12 +337,12 @@ class TestCasesPanel(wx.Panel):
             'start_clicked': self.start_clicked if hasattr(self, 'start_clicked') else False
         }
         logger.info('Saving state.')
-        with open(r'D:\PATVS\window_state.json', 'w') as state_file:
+        with open(r'C:\PATVS\window_state.json', 'w') as state_file:
             json.dump(state, state_file)
 
     def restore_state(self):
         try:
-            with open(r'D:\PATVS\window_state.json', 'r') as state_file:
+            with open(r'C:\PATVS\window_state.json', 'r') as state_file:
                 state = json.load(state_file)
                 # 防止 username 篡改数据
                 if state['username'] == self.username:
@@ -402,66 +417,85 @@ class TestCasesPanel(wx.Panel):
             wx.CallAfter(self.case_enable)
             wx.CallAfter(self.refresh_node_case_status, case_status=case_result)
             wx.CallAfter(self.update_statistics)
-        elif clicked_button in [self.result_buttons['Fail'], self.result_buttons['Block']]:
-            # 处理 fail or block
+        if clicked_button is self.result_buttons['Fail']:
+            # 处理 Fail
             # 弹出文本输入对话框
-            dlg = wx.TextEntryDialog(self, '请输入Fail/Block原因 :', 'Comment')
+            dlg = wx.TextEntryDialog(self, '请输入Fail原因 :', 'Comment')
             if dlg.ShowModal() == wx.ID_OK:
                 input_content = dlg.GetValue().strip()  # 获取输入的内容
                 if input_content:
-                    logger.info(f"{case_result} Button clicked, Content: {input_content}")
-                    http_manager.update_end_time_case_id(self.CaseID, case_result, input_content, self.token)
+                    logger.info(f"Fail Button clicked, Content: {input_content}")
+                    http_manager.update_end_time_case_id(self.CaseID, case_result, f'Fail: {input_content}', self.token)
                     wx.CallAfter(self.case_enable)
                     wx.CallAfter(self.refresh_node_case_status, case_status=case_result)
                     wx.CallAfter(self.update_statistics)
+            else:
+                wx.MessageDialog(self, '内容不能为空，请重新输入!', '错误', style=wx.OK | wx.ICON_ERROR).ShowModal()
+            dlg.Destroy()
+        if clicked_button is self.result_buttons['Block']:
+            # 处理 fail or block
+            # 弹出文本输入对话框
+            dlg = wx.TextEntryDialog(self, '请输入Block原因 :', 'Comment')
+            if dlg.ShowModal() == wx.ID_OK:
+                input_content = dlg.GetValue().strip()  # 获取输入的内容
+                if input_content:
+                    logger.info(f"Block Button clicked, Content: {input_content}")
+                    http_manager.update_end_time_case_id(self.CaseID, case_result, f'Block: {input_content}',
+                                                         self.token)
                     # 设置事件以通知监控线程停止
                     self.patvs_monitor.stop_event = False
                     # 当用例为 block 时，需要主动去停止 messageLoop 的循环
-                    try:
-                        win32api.PostThreadMessage(self.msg_loop_thread_id, win32con.WM_QUIT, 0, 0)
-                    except pywintypes.error as e:
-                        logger.warning(f"{e}")
-                    except:
-                        pass
-                    try:
-                        win32api.PostThreadMessage(self.patvs_monitor.msg_loop_thread_id, win32con.WM_QUIT, 0, 0)
-                    except pywintypes.error as e:
-                        logger.warning(f"{e}")
-                    except:
-                        pass
+                    if self.patvs_monitor.msg_loop_thread_id:
+                        logger.warning("进入终止消息循环")
+                        try:
+                            win32api.PostThreadMessage(self.patvs_monitor.msg_loop_thread_id, win32con.WM_QUIT, 0, 0)
+                        except pywintypes.error as e:
+                            logger.warning(f"{e}")
+                        except:
+                            pass
+                        self.patvs_monitor.msg_loop_thread_id = None
+                    time.sleep(1)  # block后线程终止需要一些时间，防止出现意外解禁按钮
+                    wx.CallAfter(self.case_enable)
+                    wx.CallAfter(self.refresh_node_case_status, case_status=case_result)
+                    wx.CallAfter(self.update_statistics)
                 else:
                     wx.MessageDialog(self, '内容不能为空，请重新输入!', '错误', style=wx.OK | wx.ICON_ERROR).ShowModal()
             dlg.Destroy()
         self.start_clicked = False
 
     def start_test(self, event):
-        self.start_clicked = True
-        # 检查是否有选中的用例
-        if not hasattr(self, 'CaseID') or not self.CaseID:
-            wx.MessageBox('请先选择用例', 'Warning')
+        try:
+            self.start_clicked = True
+            # 检查是否有选中的用例
+            if not hasattr(self, 'CaseID') or not self.CaseID:
+                wx.MessageBox('请先选择用例', 'Warning')
+                return
+            action_and_num = http_manager.get_params(f'/get_case_actions_and_num/{self.CaseID}').get('actions_and_num')
+            logger.warning(action_and_num)
+            if not action_and_num:
+                wx.MessageBox('未检测到任何匹配项，请按照规则修改用例标题后再测试', 'Warning')
+                return
+            result = http_manager.get_params(f'/get_case_result/{self.CaseID}')
+            if result.get('case_result'):
+                wx.MessageBox('已有测试结果，请重置此条测试用例后再进行测试', 'Warning')
+                return
+            wx.CallAfter(self.case_disable)
+            http_manager.post_data('/update_start_time',
+                                   {'case_id': self.CaseID, 'actions': str(action_and_num)}, token=self.token)
+            # 初始化终止信号
+            self.patvs_monitor.stop_event = True
+            start_time = http_manager.get_start_time(self.CaseID)
+            # 使用多线程异步运行，防止GUI界面卡死
+            thread = threading.Thread(target=self.patvs_monitor.run_main,
+                                      args=(int(self.CaseID), list(action_and_num), str(start_time),))
+            thread.setDaemon(True)
+            thread.start()
+            # 获取线程ID
+            self.msg_loop_thread_id = thread.ident
+        except Exception as e:
+            wx.MessageBox(f'出现未知错误: {e},请联系系统管理员', 'Error')
+            logger.error(f'出现未知错误: {e}')
             return
-        action_and_num = http_manager.get_params(f'/get_case_actions_and_num/{self.CaseID}').get('actions_and_num')
-        logger.warning(action_and_num)
-        if not action_and_num:
-            wx.MessageBox('未检测到任何匹配项，请按照规则修改用例标题后再测试', 'Warning')
-            return
-        result = http_manager.get_params(f'/get_case_result/{self.CaseID}')
-        if result.get('case_result'):
-            wx.MessageBox('已有测试结果，请重置此条测试用例后再进行测试', 'Warning')
-            return
-        wx.CallAfter(self.case_disable)
-        http_manager.post_data('/update_start_time',
-                               {'case_id': self.CaseID, 'actions': str(action_and_num)}, token=self.token)
-        # 初始化终止信号
-        self.patvs_monitor.stop_event = True
-        start_time = http_manager.get_start_time(self.CaseID)
-        # 使用多线程异步运行，防止GUI界面卡死
-        thread = threading.Thread(target=self.patvs_monitor.run_main,
-                                  args=(int(self.CaseID), list(action_and_num), str(start_time),))
-        thread.setDaemon(True)
-        thread.start()
-        # 获取线程ID
-        self.msg_loop_thread_id = thread.ident
 
     def after_test(self):
         for button in self.result_buttons:
@@ -473,6 +507,7 @@ class TestCasesPanel(wx.Panel):
         case 执行状态按钮显示
         :return:
         """
+        self.status_button.Disable()
         self.plan_name_combo.Disable()
         self.sheet_name_combo.Disable()
         self.tree.Disable()
@@ -488,6 +523,7 @@ class TestCasesPanel(wx.Panel):
         case 未执行状态按钮显示
         :return:
         """
+        self.status_button.Enable()
         self.tree.Enable()
         self.plan_name_combo.Enable()
         self.sheet_name_combo.Enable()
@@ -537,7 +573,7 @@ class TestCasesPanel(wx.Panel):
 
             def complete_upload():
                 try:
-                    run_main(pathname, self.token)
+                    run_main(pathname, self.username, self.token)
                     wx.CallAfter(wx.MessageBox, "文件上传和解析成功", "提示", wx.OK | wx.ICON_INFORMATION)
                 except Exception as e:
                     # 格式校验出错
@@ -636,8 +672,7 @@ class TestCasesPanel(wx.Panel):
 
         # 设置列标题
         cols_title = ['测试结果', '测试耗时(S)', '选择次数(弃用)', '测试机型', '用例标题', '前置条件', '用例步骤',
-                      '预期结果',
-                      '开始时间', '完成时间', '测试动作', '评论']
+                      '预期结果', '开始时间', '完成时间', '测试动作', '评论']
         for i, title in enumerate(cols_title):
             self.grid.SetColLabelValue(i, title)
 
@@ -689,11 +724,25 @@ class TestCasesPanel(wx.Panel):
         # 清除原有数据
         grid.ClearGrid()
         # 获取新的数据
-        data = http_manager.get_params(f'/get_cases_by_case_id/{self.CaseID}')
-        all_case = data.get('cases')
-        for i, case in enumerate(all_case):
-            for j, item in enumerate(case[:-2]):  # 排除用例ID
-                grid.SetCellValue(i, j + 1, str(item))  # self.grid.InsertCols(0) 所以要j+1
+        # data = http_manager.get_params(f'/get_cases_by_case_id/{self.CaseID}')
+        # all_case = data.get('cases')
+        cols_title = ['测试结果', '测试耗时(S)', '选择次数(弃用)', '测试机型', '用例标题', '前置条件', '用例步骤',
+                      '预期结果', '开始时间', '完成时间', '测试动作', '评论']
+        self.testCases = http_manager.get_cases_by_sheet_id(self.sheet_id)
+        case_ids = list(self.testCases.keys())
+        comments_map = http_manager.post_data(f'/get_comments', {'case_ids': case_ids}, token=self.token).get(
+            'comments')
+        for i, (case_id, case) in enumerate(self.testCases.items()):
+            for j, item in enumerate(case[:-2]):  # 排除ID等敏感数据
+                if cols_title[j] == '评论':
+                    comments = comments_map.get(case_id, "")
+                    self.grid.SetCellValue(i, j + 1, str(comments))
+                else:
+                    self.grid.SetCellValue(i, j + 1, str(item))  # self.grid.InsertCols(0) 所以要j+1
+        #     grid.SetCellValue(i, j + 1, str(item))  # self.grid.InsertCols(0) 所以要j+1
+        # for i, case in enumerate(all_case):
+        #     for j, item in enumerate(case[:-2]):  # 排除用例ID
+        #         grid.SetCellValue(i, j + 1, str(item))  # self.grid.InsertCols(0) 所以要j+1
         # 刷新网格以显示新的数据
         grid.ForceRefresh()
 
@@ -716,8 +765,13 @@ class TestCasesPanel(wx.Panel):
             return
         evt.Skip(True)
 
-    def select_annex(self, event):
-        pass
+    def permutation_and_combination(self, event):
+        """
+        排列工具生成器
+        """
+        dlg = PermutationDialog(self, "排列生成工具")
+        dlg.ShowModal()
+        dlg.Destroy()
 
     def on_download(self, grid, event):
         """
@@ -767,7 +821,7 @@ class TestCasesPanel(wx.Panel):
         except IOError as e:
             wx.LogError(f"无法保存文件 '{filepath}'. 错误: {e}")
 
-    def PopulateTree(self, sheet_id, sheet_name):
+    def case_tree(self, sheet_id, sheet_name):
         """
         负责展示用例左侧节点
         :param sheet_id: 用例文件
@@ -777,53 +831,29 @@ class TestCasesPanel(wx.Panel):
         self.tree.DeleteAllItems()  # 清空现有的树状结构
         self.testCases = http_manager.get_cases_by_sheet_id(sheet_id)
         self.update_statistics()
-        # # 定义用于表示状态的图标
-        # icons = {
-        #     "Pass": resource_path("icon\\Pass.png"),
-        #     "Fail": resource_path("icon\\Fail.png"),
-        #     "Block": resource_path("icon\\Block.png"),
-        #     "None": None,
-        #     "Root": resource_path("icon\\rootIcon.png")
-        # }
-        # image_list = wx.ImageList(16, 16)
-        # self.icon_indices = {}
-        # # 创建一个透明位图
-        # transparent_bmp = wx.Bitmap(16, 16, 32)
-        # image = transparent_bmp.ConvertToImage()
-        # image.InitAlpha()
-        # for x in range(16):
-        #     for y in range(16):
-        #         image.SetAlpha(x, y, 0)
-        # transparent_bmp = wx.Bitmap(image)
-        # for status, icon in icons.items():
-        #     if icon:
-        #         self.icon_indices[status] = image_list.Add(wx.Bitmap(icon))  # 逐个向图像列表中添加图标，并获取其索引
-        #     else:
-        #         self.icon_indices[status] = image_list.Add(transparent_bmp)
-        # self.tree.AssignImageList(image_list)  # 将图像列表分配给树
         if self.tree.GetImageList() is None:
             self.tree.AssignImageList(self.image_list)
 
         # 添加根节点并设置图标
         root = self.tree.AddRoot(sheet_name, self.icon_indices['Root'])
         for key, value in self.testCases.items():
-            caseID = key
-            caseStatus = value[0]
+            case_id = key
+            case_status = value[0]
             # 按照 机型→标题 展示title
-            caseModel = (value[3] + '→') if value[3] else ''
-            caseTitle = value[4]
+            case_model = (value[3] + '→') if value[3] else ''
+            case_title = value[4]
             # 根据状态添加相应的图标
-            if caseStatus in self.icon_indices:
-                caseNode = self.tree.AppendItem(root, caseModel + caseTitle)
-                self.tree.SetItemImage(caseNode, self.icon_indices[caseStatus])  # 设置节点图像
+            if case_status in self.icon_indices:
+                case_node = self.tree.AppendItem(root, case_model + case_title)
+                self.tree.SetItemImage(case_node, self.icon_indices[case_status])  # 设置节点图像
             else:
-                caseNode = self.tree.AppendItem(root, caseModel + caseTitle)
+                case_node = self.tree.AppendItem(root, case_model + case_title)
 
             # 将CaseID存储在节点数据中
-            self.tree.SetItemData(caseNode, caseID)
+            self.tree.SetItemData(case_node, case_id)
         self.tree.Expand(root)
 
-    def OnSelChanged(self, event):
+    def case_details(self, event):
         """
         负责展示用例详情
         :param event:
@@ -864,3 +894,86 @@ class TestCasesPanel(wx.Panel):
         滚动到文本框的顶部
         """
         self.content.ScrollLines(-self.content.GetNumberOfLines())
+
+
+class PermutationDialog(wx.Dialog):
+    """
+    排列工具
+    """
+
+    def __init__(self, parent, title):
+        super().__init__(parent, title=title, size=(450, 300))
+
+        panel = wx.Panel(self)
+        main_sizer = wx.BoxSizer(wx.VERTICAL)
+
+        # 端口勾选框
+        self.ports_checkboxes = []
+        ports = ['C1', 'C2', 'C3', 'C4', 'A1', 'A2', 'A3', 'A4']
+        ports_sizer = wx.BoxSizer(wx.HORIZONTAL)
+        for port in ports:
+            cb = wx.CheckBox(panel, label=port)
+            self.ports_checkboxes.append(cb)
+            ports_sizer.Add(cb, 1, wx.ALL, 5)
+
+        main_sizer.Add(wx.StaticText(panel, label="请选择端口:"), 0, wx.ALL, 5)
+        main_sizer.Add(ports_sizer, 0, wx.EXPAND | wx.ALL, 5)
+
+        # 型号输入框
+        main_sizer.Add(wx.StaticText(panel, label="请输入设备型号（每行一个）:"), 0, wx.ALL, 5)
+        self.devices_textctrl = wx.TextCtrl(panel, style=wx.TE_MULTILINE, size=(300, 100))
+        main_sizer.Add(self.devices_textctrl, 1, wx.EXPAND | wx.ALL, 5)
+
+        # 生成按钮
+        generate_button = wx.Button(panel, label="生成排列")
+        generate_button.Bind(wx.EVT_BUTTON, self.on_generate)
+        main_sizer.Add(generate_button, 0, wx.ALIGN_CENTER | wx.ALL, 10)
+
+        panel.SetSizer(main_sizer)
+
+    def on_generate(self, event):
+        # 获取选中的端口
+        selected_ports = [cb.GetLabel() for cb in self.ports_checkboxes if cb.IsChecked()]
+        if not selected_ports:
+            wx.MessageBox("请至少选择一个端口", "提示", wx.OK | wx.ICON_WARNING)
+            return
+
+        # 获取输入的设备型号
+        devices = [device.strip() for device in self.devices_textctrl.GetValue().split('\n') if device.strip()]
+        if len(devices) < len(selected_ports):
+            wx.MessageBox("设备型号的数量不能小于选中的端口数量", "提示", wx.OK | wx.ICON_WARNING)
+            return
+
+        # 生成排列组合
+        combinations = list(itertools.permutations(devices, len(selected_ports)))
+
+        # 显示文件保存对话框，让用户选择保存路径和文件名
+        with wx.FileDialog(self, "保存排列组合", wildcard="Excel files (*.xlsx)|*.xlsx",
+                           style=wx.FD_SAVE | wx.FD_OVERWRITE_PROMPT) as file_dialog:
+
+            if file_dialog.ShowModal() == wx.ID_CANCEL:
+                return  # 用户取消操作
+
+            # 获取用户选择的路径
+            save_path = file_dialog.GetPath()
+        # 创建 Excel 文件并保存
+        try:
+            self.save_to_excel(selected_ports, combinations, save_path)
+            wx.MessageBox(f"排列组合已生成并保存为 {save_path}", "提示", wx.OK | wx.ICON_INFORMATION)
+        except Exception as e:
+            wx.MessageBox(f"保存文件时发生错误: {str(e)}", "错误", wx.OK | wx.ICON_ERROR)
+
+    def save_to_excel(self, columns, data, file_path):
+        # 创建 Excel 工作簿
+        wb = openpyxl.Workbook()
+        ws = wb.active
+
+        # 写入列标题
+        ws.append(columns)
+
+        # 写入数据行
+        for row in data:
+            ws.append(row)
+
+        # 保存文件
+        wb.save(file_path)

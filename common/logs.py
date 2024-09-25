@@ -8,28 +8,33 @@ from loguru import logger as _logger
 import os
 from datetime import datetime
 
+# 定义一个变量来标记是否在服务器上运行
+IS_SERVER = False
 # 获取当前日期，格式为 YYYY-MM-DD
 current_date = datetime.now().strftime('%Y-%m-%d')
-directory = f"D:\\PATVS\\{current_date}"
+if IS_SERVER:
+    directory = f"/tmp/PATVS/{current_date}"
+else:
+    directory = f"C:\\PATVS\\{current_date}"
 if not os.path.exists(directory):
     os.makedirs(directory)
+    os.chmod(directory, 0o755)  # 设置目录权限为可读写
+
 
 # 函数用于检查是否是控制台
 def is_console():
-    # 检查 sys.executable 是否指向 python 解释器
     return os.path.basename(sys.executable) == 'python.exe' or \
            os.path.basename(sys.executable) == 'python3.exe' or \
            os.path.basename(sys.executable) == 'pythonw.exe'
 
+
 class InterceptHandler(logging.Handler):
     def emit(self, record):
-        # Get corresponding Loguru level if it exists
         try:
             level = _logger.level(record.levelname).name
         except ValueError:
             level = record.levelno
 
-        # Find caller from where originated the logged message
         frame, depth = logging.currentframe(), 2
         while frame.f_code.co_filename == logging.__file__:
             frame = frame.f_back
@@ -41,7 +46,6 @@ class InterceptHandler(logging.Handler):
 class Log(object):
     __logger = None
 
-    # loguru日志配置
     _config = {
         "handlers": [],
     }
@@ -49,8 +53,8 @@ class Log(object):
     @classmethod
     def get_logger(cls):
         if cls.__logger is None:
-            if is_console():
-                # 如果在控制台，则添加日志输出到标准输出的handler
+            if is_console() or IS_SERVER:
+                # 如果在控制台或服务器运行，输出到控制台
                 cls._config["handlers"].append({
                     "sink": sys.stdout,
                     "format": "<green>{time:YYYY-MM-DD HH:mm:ss.SSS}</green> | "
@@ -59,9 +63,9 @@ class Log(object):
                     "level": "INFO"
                 })
             else:
-                # 如果不在控制台，在GUI运行时，仅将日志输出到文件
+                # 如果是在服务器运行，输出到文件
                 cls._config["handlers"].append({
-                    "sink": f"{directory}/patvs.log",  # 确保文件路径是正确的
+                    "sink": f"{directory}/patvs.log",
                     "serialize": False,
                     "level": "DEBUG",
                     "retention": "10 days",
