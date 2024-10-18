@@ -426,6 +426,19 @@ class TestCasesPanel(wx.Panel):
                 if input_content:
                     logger.info(f"Fail Button clicked, Content: {input_content}")
                     http_manager.update_end_time_case_id(self.CaseID, case_result, f'Fail: {input_content}', self.token)
+                    # 设置事件以通知监控线程停止
+                    self.patvs_monitor.stop_event = False
+                    # 当用例为 block 时，需要主动去停止 messageLoop 的循环
+                    if self.patvs_monitor.msg_loop_thread_id:
+                        logger.warning("进入终止消息循环")
+                        try:
+                            win32api.PostThreadMessage(self.patvs_monitor.msg_loop_thread_id, win32con.WM_QUIT, 0, 0)
+                        except pywintypes.error as e:
+                            logger.warning(f"{e}")
+                        except:
+                            pass
+                        self.patvs_monitor.msg_loop_thread_id = None
+                    time.sleep(1)  # block后线程终止需要一些时间，防止出现意外解禁按钮
                     wx.CallAfter(self.case_enable)
                     wx.CallAfter(self.refresh_node_case_status, case_status=case_result)
                     wx.CallAfter(self.update_statistics)
@@ -515,7 +528,7 @@ class TestCasesPanel(wx.Panel):
         for button in self.result_buttons:
             self.result_buttons[button].Show()
         self.result_buttons['Pass'].Disable()
-        self.result_buttons['Fail'].Disable()
+      #  self.result_buttons['Fail'].Disable()
         self.Layout()
 
     def case_enable(self):
@@ -967,13 +980,14 @@ class PermutationDialog(wx.Dialog):
         # 创建 Excel 工作簿
         wb = openpyxl.Workbook()
         ws = wb.active
+        ws.title = "排列组合"
 
-        # 写入列标题
-        ws.append(columns)
+        # 写入固定的用例模板标题
+        ws.append(["测试机型", "用例标题", "前置条件", "用例步骤", "预期结果"])
 
         # 写入数据行
-        for row in data:
-            ws.append(row)
+        for combination in data:
+            ws.append(["", "[时间+1]"+", ".join(columns), "", ", ".join(combination), "功能正常"])
 
         # 保存文件
         wb.save(file_path)

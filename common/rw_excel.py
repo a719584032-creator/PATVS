@@ -80,7 +80,7 @@ class MyExcel:
         if row_end is None:
             row_end = self.get_max_row()
         data = []
-        for i in range(row_start, row_end+1):
+        for i in range(row_start, row_end + 1):
             data.append(self.getRowValues(i))
         return data
 
@@ -143,6 +143,7 @@ class MyExcel:
             raise ValueError("列标题的格式错误！")
         return True
 
+
 if __name__ == '__main__':
     path = Public.get_root_path() + '/data/template for packaging collection- thinkplus TF10.xlsx'
     data = MyExcel(path)
@@ -161,7 +162,7 @@ if __name__ == '__main__':
             logger.info(f" sales packaging 起始数据行 {sales_start_index}")
             continue
         if value[1] is None or value[1] == '':
-            sales_end_index = i-1
+            sales_end_index = i - 1
             logger.info(f" sales packaging 结束数据行 {sales_end_index}")
             break
     else:
@@ -182,7 +183,7 @@ if __name__ == '__main__':
             logger.info(f" transport packaging 起始数据行 {transport_start_index}")
             continue
         if value[1] is None or value[1] == '':
-            transport_end_index = i-1
+            transport_end_index = i - 1
             logger.info(f" transport packaging 结束数据行 {transport_end_index}")
             break
     else:
@@ -199,4 +200,4 @@ if __name__ == '__main__':
         if item[2] == 'Plastic - PP(polypropylene)':
             item[2] = 'Plastic - PP (polypropylene)'
     print(transport_packaging_data)
-    print('sales packaging'=='sales packaging')
+    print('sales packaging' == 'sales packaging')

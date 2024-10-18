@@ -11,9 +11,9 @@ PySocks==1.7.1
 python-dotenv==1.0.0
 PyYAML==6.0.1
 requests==2.31.0
-Flask==2.0.3
+Flask
 mysql-connector-python==8.0.26
 PyJWT==2.1.0
-Werkzeug==2.0.3
+Werkzeug
 loguru==0.5.3
 Flask-Security==5.5.2

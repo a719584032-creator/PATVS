@@ -701,7 +701,9 @@ def update_project_workloading_tester():
     try:
         manager = TestCaseManager(conn, cursor)
         if tester:
-            manager.select_userid_by_username(tester)
+            res = manager.select_userid_by_username(tester)
+            if not res:
+                return jsonify({'message': f'你输入的用户 {tester} 不存在'}), 400
         manager.update_project_workloading_tester(plan_name, project_name, workloading, tester, sheet_id)
         conn.commit()
         return jsonify({'message': 'success'}), 200
