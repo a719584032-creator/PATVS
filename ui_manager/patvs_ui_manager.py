@@ -23,7 +23,6 @@ import win32api
 from requests_manager.http_requests_manager import http_manager
 
 
-
 def resource_path(relative_path):
     """ Get absolute path to resource, works for dev and for PyInstaller """
     base_path = getattr(sys, '_MEIPASS', os.path.dirname(os.path.abspath(__file__)))
@@ -406,6 +405,34 @@ class TestCasesPanel(wx.Panel):
             self.log_content.AppendText(message + '\n')  # 在文本控件的末尾添加文本
             logger.debug(message + '\n')
 
+    def upload_image(self):
+        # 创建文件选择对话框
+        with wx.FileDialog(self, "选择图片文件", wildcard="JPEG files (*.jpg;*.jpeg)|*.jpg;*.jpeg|PNG files (*.png)|*.png",
+                        style=wx.FD_OPEN | wx.FD_FILE_MUST_EXIST) as fileDialog:
+
+            if fileDialog.ShowModal() == wx.ID_CANCEL:
+                return  # 用户取消操作
+
+            # 获取选择的文件路径
+            pathname = fileDialog.GetPath()
+            try:
+                # 上传文件
+                self.upload_file_to_server(pathname)
+                return True
+            except Exception as e:
+                wx.LogError(f"无法打开文件 '{pathname}'. 错误信息: {e}")
+                return False
+
+    def upload_file_to_server(self, file_path):
+        with open(file_path, 'rb') as file:
+            files = {'image_file': (os.path.basename(file_path), file, 'multipart/form-data')}
+            data = {'case_id': self.CaseID}
+            response = http_manager.post_file('/upload-image', files=files, data=data, token=self.token)
+            if response.status_code == 200:
+                wx.MessageBox('图片上传成功！', '信息', wx.OK | wx.ICON_INFORMATION)
+            else:
+                wx.MessageBox('图片上传失败！', '错误', wx.OK | wx.ICON_ERROR)
+
     def test_result(self, event):
 
         clicked_button = event.GetEventObject()
@@ -413,6 +440,16 @@ class TestCasesPanel(wx.Panel):
         if clicked_button is self.result_buttons['Pass']:
             # 处理 pass
             logger.info(f"Pass Button clicked {self.CaseID}")
+            action_and_num = http_manager.get_params(f'/get_case_actions_and_num/{self.CaseID}').get('actions_and_num')
+            logger.warning(action_and_num)
+            logger.warning(type(action_and_num))
+
+            if len(action_and_num) == 1 and '时间' in action_and_num[0]:
+                # 强制用户上传图片
+                image_uploaded = self.upload_image()
+                if not image_uploaded:
+                    wx.MessageBox('上传图片是必填操作，请上传图片后再继续。', '提示', wx.OK | wx.ICON_WARNING)
+                    return  # 如果用户没有上传图片，则返回，阻止后续操作
             http_manager.update_end_time_case_id(self.CaseID, 'Pass', token=self.token)
             wx.CallAfter(self.case_enable)
             wx.CallAfter(self.refresh_node_case_status, case_status=case_result)
@@ -528,7 +565,7 @@ class TestCasesPanel(wx.Panel):
         for button in self.result_buttons:
             self.result_buttons[button].Show()
         self.result_buttons['Pass'].Disable()
-      #  self.result_buttons['Fail'].Disable()
+        #  self.result_buttons['Fail'].Disable()
         self.Layout()
 
     def case_enable(self):
@@ -987,7 +1024,7 @@ class PermutationDialog(wx.Dialog):
 
         # 写入数据行
         for combination in data:
-            ws.append(["", "[时间+1]"+", ".join(columns), "", ", ".join(combination), "功能正常"])
+            ws.append(["", "[时间+1]" + ", ".join(columns), "", ", ".join(combination), "功能正常"])
 
         # 保存文件
         wb.save(file_path)

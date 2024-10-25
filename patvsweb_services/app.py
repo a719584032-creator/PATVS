@@ -2,17 +2,29 @@ import sys
 import os
 
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+import jwt
+import datetime
+import re
+import uuid
 from flask import Flask, request, jsonify
 from common.logs import logger
 from mysql.connector.pooling import MySQLConnectionPool
 from patvsweb_services.sql_manager import TestCaseManager
 from functools import wraps
-import jwt
-import datetime
-import re
+from werkzeug.utils import secure_filename
+
+
 
 app = Flask(__name__)
 app.config['SECRET_KEY'] = 'lenovo_secret_key'
+# 配置文件上传目录
+BASE_UPLOAD_FOLDER = 'uploads/'
+app.config['UPLOAD_FOLDER'] = BASE_UPLOAD_FOLDER
+
+# 确保上传目录存在
+if not os.path.exists(BASE_UPLOAD_FOLDER):
+    os.makedirs(BASE_UPLOAD_FOLDER)
+
 # 数据库配置
 # DB_CONFIG = {
 #     'host': os.getenv('DB_HOST'),
@@ -721,5 +733,62 @@ def get_hello():
     return jsonify({'tester': "hello,hello,hello,hello,hello。网络是通的。"}), 200
 
 
+# 生成唯一文件名
+def generate_unique_filename(original_filename):
+    extension = original_filename.rsplit('.', 1)[1]
+    unique_filename = f"{uuid.uuid4()}.{extension}"
+    return unique_filename
+
+
+@app.route('/upload-image', methods=['POST'])
+@token_required
+def upload_image(current_user):
+    # 从 request.files 获取文件对象
+    image_file = request.files.get('image_file')
+    case_id = request.form.get('case_id')
+
+    if not case_id or not image_file:
+        return jsonify({'error': 'Case ID and image file are required'}), 400
+
+    # 确保文件名安全并生成唯一文件名
+    original_filename = secure_filename(image_file.filename)
+    unique_filename = generate_unique_filename(original_filename)
+    logger.info('==========================')
+    logger.info(original_filename)
+    logger.info(unique_filename)
+    logger.info('==========================')
+
+    # 创建存储路径
+    today = datetime.datetime.now().strftime("%Y-%m-%d")
+    storage_path = os.path.join(app.config['UPLOAD_FOLDER'], today, case_id)  # 添加用例ID作为子目录
+    if not os.path.exists(storage_path):
+        os.makedirs(storage_path)
+
+    file_path = os.path.join(storage_path, unique_filename)
+
+    # 获取文件大小和MIME类型
+    mime_type = image_file.mimetype
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    try:
+        # 保存文件到文件系统
+        image_file.save(file_path)
+        # 在保存文件后获取文件大小
+        file_size = os.path.getsize(file_path)
+        manager = TestCaseManager(conn, cursor)
+        image_id = manager.upload_image_file(case_id, original_filename, unique_filename, file_path, file_size,
+                                             mime_type)
+        conn.commit()
+
+        return jsonify({'image_id': image_id, 'file_path': file_path}), 200
+    except Exception as e:
+        conn.rollback()
+        logger.error(f"An error occurred: {e}")
+        return jsonify({'error': str(e)}), 500
+    finally:
+        cursor.close()
+        conn.close()
+
+
 if __name__ == '__main__':
-    app.run(debug=True, host='10.184.32.52', port=80)
+    app.run(debug=True, host='127.0.0.1', port=80)
