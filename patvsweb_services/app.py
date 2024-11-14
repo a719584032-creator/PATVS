@@ -2,37 +2,43 @@ import sys
 import os
 
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+import boto3
+from botocore.client import Config
 import jwt
 import datetime
 import re
 import uuid
+import time
 from flask import Flask, request, jsonify
 from common.logs import logger
+from config_manager.config import env_config
 from mysql.connector.pooling import MySQLConnectionPool
 from patvsweb_services.sql_manager import TestCaseManager
 from functools import wraps
 from werkzeug.utils import secure_filename
 
-
-
 app = Flask(__name__)
 app.config['SECRET_KEY'] = 'lenovo_secret_key'
-# 配置文件上传目录
-BASE_UPLOAD_FOLDER = 'uploads/'
-app.config['UPLOAD_FOLDER'] = BASE_UPLOAD_FOLDER
 
-# 确保上传目录存在
-if not os.path.exists(BASE_UPLOAD_FOLDER):
-    os.makedirs(BASE_UPLOAD_FOLDER)
+# 配置S3存储桶
+BUCKET_NAME = env_config.global_setting.aws_bucket_name
+
+# 配置S3客户端
+s3 = boto3.client('s3',
+                  aws_access_key_id=env_config.global_setting.aws_access_key,
+                  aws_secret_access_key=env_config.global_setting.aws_secret_key,
+                  endpoint_url=env_config.global_setting.aws_endpoint_url,
+                  region_name=env_config.global_setting.aws_region_name,
+                  config=Config(signature_version=env_config.global_setting.aws_signature_version))
 
 # 数据库配置
-# DB_CONFIG = {
-#     'host': os.getenv('DB_HOST'),
-#     'user': os.getenv('DB_USER'),
-#     'password': os.getenv('DB_PASSWORD'),
-#     'database': os.getenv('DB_DATABASE'),
-#     'buffered': True
-# }
+DB_CONFIG = {
+    'host': env_config.global_setting.db_host,
+    'user': env_config.global_setting.db_user,
+    'password': env_config.global_setting.db_password,
+    'database': env_config.global_setting.db_database,
+    'buffered': env_config.global_setting.db_buffered
+}
 
 # 生产
 # DB_CONFIG = {
@@ -43,14 +49,6 @@ if not os.path.exists(BASE_UPLOAD_FOLDER):
 #     'buffered': True
 # }
 
-# test
-DB_CONFIG = {
-    'host': '10.196.155.148',
-    'user': 'a_appconnect',
-    'password': 'dHt6BGB4Zxi^',
-    'database': 'patvs_test',
-    'buffered': True
-}
 db_pool = MySQLConnectionPool(pool_name="mypool", pool_size=10, **DB_CONFIG)
 
 
@@ -740,47 +738,58 @@ def generate_unique_filename(original_filename):
     return unique_filename
 
 
-@app.route('/upload-image', methods=['POST'])
+@app.route('/upload-images', methods=['POST'])
 @token_required
 def upload_image(current_user):
-    # 从 request.files 获取文件对象
-    image_file = request.files.get('image_file')
+    # 从 request.files 获取文件对象列表
+    image_files = request.files.getlist('image_files')
     case_id = request.form.get('case_id')
 
-    if not case_id or not image_file:
+    if not case_id or not image_files:
         return jsonify({'error': 'Case ID and image file are required'}), 400
-
-    # 确保文件名安全并生成唯一文件名
-    original_filename = secure_filename(image_file.filename)
-    unique_filename = generate_unique_filename(original_filename)
-    logger.info('==========================')
-    logger.info(original_filename)
-    logger.info(unique_filename)
-    logger.info('==========================')
-
-    # 创建存储路径
-    today = datetime.datetime.now().strftime("%Y-%m-%d")
-    storage_path = os.path.join(app.config['UPLOAD_FOLDER'], today, case_id)  # 添加用例ID作为子目录
-    if not os.path.exists(storage_path):
-        os.makedirs(storage_path)
-
-    file_path = os.path.join(storage_path, unique_filename)
-
-    # 获取文件大小和MIME类型
-    mime_type = image_file.mimetype
     conn = get_db_connection()
     cursor = conn.cursor()
+    manager = TestCaseManager(conn, cursor)
+    uploaded_images = []
     try:
-        # 保存文件到文件系统
-        image_file.save(file_path)
-        # 在保存文件后获取文件大小
-        file_size = os.path.getsize(file_path)
-        manager = TestCaseManager(conn, cursor)
-        image_id = manager.upload_image_file(case_id, original_filename, unique_filename, file_path, file_size,
-                                             mime_type)
+        for image_file in image_files:
+            if not hasattr(image_file, 'read'):
+                logger.error("One of the image_files is not a file-like object")
+                continue
+            logger.info(image_file.filename)
+            # 确保文件名安全，并添加时间戳以确保唯一性
+            original_filename = secure_filename(image_file.filename)
+            timestamp = int(time.time())
+            unique_filename = f"{timestamp}_{image_file.filename}"
+
+            # 创建存储路径
+            today = datetime.datetime.now().strftime("%Y-%m-%d")
+            s3_key = f"{case_id}/{today}/{original_filename}"
+
+            # 获取文件大小和MIME类型
+            mime_type = image_file.mimetype
+            image_file.seek(0, os.SEEK_END)
+            file_size = image_file.tell()
+            image_file.seek(0)  # 重置文件指针以供上传
+
+            # 上传文件到S3
+            s3.upload_fileobj(
+                image_file,
+                BUCKET_NAME,
+                s3_key,
+                ExtraArgs={'ContentType': mime_type}
+            )
+
+            logger.info(f"Uploaded file: {original_filename} to S3 with key: {s3_key}")
+
+            # 将文件信息插入数据库
+            image_id = manager.upload_image_file(case_id, original_filename, unique_filename, s3_key, file_size,
+                                                 mime_type)
+            uploaded_images.append({'image_id': image_id, 's3_key': s3_key})
+
         conn.commit()
 
-        return jsonify({'image_id': image_id, 'file_path': file_path}), 200
+        return jsonify({'uploaded_images': uploaded_images}), 200
     except Exception as e:
         conn.rollback()
         logger.error(f"An error occurred: {e}")

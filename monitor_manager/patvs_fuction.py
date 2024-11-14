@@ -6,6 +6,9 @@ import wx
 from common.logs import logger
 from monitor_manager.devicerm import Notification
 from monitor_manager.lock_screen import monitor_locks
+from ctypes import cast, POINTER
+from comtypes import CLSCTX_ALL
+from pycaw.pycaw import AudioUtilities, IAudioEndpointVolume
 from pynput import mouse
 import time
 import psutil
@@ -21,6 +24,7 @@ import os
 import json
 import threading
 import win32api
+import screen_brightness_control as sbc
 
 
 class Patvs_Fuction():
@@ -642,6 +646,7 @@ class Patvs_Fuction():
     def monitor_mouse_clicks(self, target_cycles):
         try:
             click_count = 0
+            listener_stopped = threading.Event()  # 用于指示监听器是否已经停止
 
             def on_click(x, y, button, pressed):
                 nonlocal click_count
@@ -649,17 +654,110 @@ class Patvs_Fuction():
                     click_count += 1
                     message = f"Mouse clicked at ({x}, {y}) with {button}. Total count: {click_count}"
                     wx.CallAfter(self.window.add_log_message, message)
-                    if click_count >= target_cycles or not self.stop_event:
+                    if click_count >= target_cycles:
                         message = "Reached target click count. Exiting..."
                         wx.CallAfter(self.window.add_log_message, message)
+                        listener_stopped.set()  # 设置监听器已停止的事件
                         return False  # Stop the listener
 
-            # Collect events until the target click count is reached
-            with mouse.Listener(on_click=on_click) as listener:
-                listener.join()
+            def stop_listener(listener):
+                # 定期检查 stop_event 和 listener_stopped
+                while self.stop_event and not listener_stopped.is_set():
+                    time.sleep(0.1)  # 检查间隔
+
+                if not listener_stopped.is_set():  # 如果监听器还没停，则停止它
+                    wx.CallAfter(self.window.add_log_message, "Stop event triggered. Exiting listener...")
+                    listener.stop()  # 立即停止监听器
+                    listener_stopped.set()  # 确保事件被设置
+
+            with keyboard.Listener(on_click=on_click) as listener:
+                # 启动后台线程以检查 stop_event
+                stop_thread = threading.Thread(target=stop_listener, args=(listener,))
+                stop_thread.start()
+                listener.join()  # 等待监听器停止
+                stop_thread.join()  # 等待后台线程停止
+
         finally:
             wx.CallAfter(self.window.add_log_message, "Stopped monitoring click.")
             self.action_complete.set()  # 设置动作完成状态
+
+    def monitor_display_status(self, target_cycles):
+        """
+        监控显示器状态，当连续关闭次数达到目标次数时退出。
+
+        :param target_off_cycles: 显示器连续关闭的目标次数
+        """
+        previous_brightness = None
+        off_cycle_count = 0
+        was_display_on = True
+
+        while self.stop_event and off_cycle_count < target_cycles:
+            try:
+                # 获取当前屏幕亮度
+                current_brightness = sbc.get_brightness(display=0)  # 假设只有一个显示器
+                if current_brightness == 0:
+                    raise Exception("Brightness is 0, assuming display is off.")
+
+                if previous_brightness is None:
+                    previous_brightness = current_brightness
+
+                # 检测屏幕关闭状态
+                if current_brightness == 0:
+                    if was_display_on:
+                        off_cycle_count += 1
+                        wx.CallAfter(self.window.add_log_message, f"显示器关闭周期完成: {off_cycle_count} 次")
+                    was_display_on = False
+                else:
+                    was_display_on = True
+
+                previous_brightness = current_brightness
+
+            except Exception as e:
+                # 当无法获取亮度时，假定屏幕已关闭
+                wx.CallAfter(self.window.add_log_message, f"无法获取亮度，假定屏幕已关闭: {e}")
+                if was_display_on:
+                    off_cycle_count += 1
+                    wx.CallAfter(self.window.add_log_message, "显示器关闭周期完成: {off_cycle_count} 次")
+                was_display_on = False
+
+            time.sleep(2)  # 每2秒检测一次
+
+        wx.CallAfter(self.window.add_log_message, "目标显示器关闭周期次数已达到，退出监控。")
+        self.action_complete.set()  # 设置动作完成状态
+
+    def get_volume(self):
+        devices = AudioUtilities.GetSpeakers()
+        interface = devices.Activate(
+            IAudioEndpointVolume._iid_, CLSCTX_ALL, None)
+        volume = cast(interface, POINTER(IAudioEndpointVolume))
+
+        # 获取当前音量（范围从 0.0 到 1.0）
+        current_volume = volume.GetMasterVolumeLevelScalar()
+        return current_volume
+
+    def monitor_volume_changes(self, target_change_count):
+        """
+        监控系统音量变化，当变化次数达到目标次数时退出。
+
+        :param target_change_count: 音量变化的目标次数
+        """
+        previous_volume = self.get_volume()
+        change_count = 0
+
+        wx.CallAfter(self.window.add_log_message, f"初始系统音量: {previous_volume * 100:.2f}%")
+
+        while self.stop_event and change_count < target_change_count:
+            time.sleep(1)  # 每秒检测一次
+            current_volume = self.get_volume()
+
+            if current_volume != previous_volume:
+                change_count += 1
+                wx.CallAfter(self.window.add_log_message,
+                             f"音量变化次数: {change_count}, 当前音量: {current_volume * 100:.2f}%")
+                previous_volume = current_volume
+
+        wx.CallAfter(self.window.add_log_message, "音量变化次数已达到目标次数，退出监控。")
+        self.action_complete.set()  # 设置动作完成状态
 
     def encrypt_data(self, data):
         fernet = Fernet(self.ENCRYPTION_KEY)
@@ -756,8 +854,15 @@ class Patvs_Fuction():
                         wx.CallAfter(self.window.add_log_message, f"开始执行监控: {action}，目标测试次数: {test_num}")
                         threading.Thread(target=self.test_count_restart_events, args=(start_time, test_num,)).start()
                     elif action.lower() in self.KEY_MAPPING:
-                        wx.CallAfter(self.window.add_log_message, f"开始执行监控按键: {action}，目标测试次数: {test_num}")
+                        wx.CallAfter(self.window.add_log_message,
+                                     f"开始执行监控按键: {action}，目标测试次数: {test_num}")
                         threading.Thread(target=self.monitor_keystrokes2, args=(test_num, action,)).start()
+                    elif action == '显示器':
+                        wx.CallAfter(self.window.add_log_message, f"开始执行监控: {action}，目标测试次数: {test_num}")
+                        threading.Thread(target=self.monitor_display_status, args=(test_num,)).start()
+                    elif action == '音量':
+                        wx.CallAfter(self.window.add_log_message, f"开始执行监控: {action}，目标测试次数: {test_num}")
+                        threading.Thread(target=self.monitor_volume_changes, args=(test_num,)).start()
                     # 等待当前监控动作完成
                     self.action_complete.wait()
                     wx.CallAfter(self.window.add_log_message, f"动作 {action} 完成")
@@ -776,6 +881,7 @@ class Patvs_Fuction():
             wx.CallAfter(self.window.after_test)
         except Exception as e:
             logger.error(f"未知错误: {e}")
+
     def on_close(self, event):
         self.save_remaining_actions()
         self.window.Destroy()

@@ -4,6 +4,7 @@ import requests
 import os
 import json
 from common.logs import logger
+from config_manager.config import env_config
 
 
 class HttpRequestManager:
@@ -105,10 +106,7 @@ def load_config(env):
         return config.get(env, {})
 
 
-# ENV = os.getenv('ENV', 'development')
-# config = load_config(ENV)
-# # 配置管理类实例
-# base_url = config.get('base_url')
-base_url = 'http://127.0.0.1'
 
+# # 配置管理类实例
+base_url = env_config.global_setting.protocol + '://' + env_config.global_setting.domain
 http_manager = HttpRequestManager(base_url)
