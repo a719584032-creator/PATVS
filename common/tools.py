@@ -86,7 +86,7 @@ class Public(object):
             application_path = os.path.dirname(__file__)
 
         # 从应用程序路径构建到数据库的路径
-        db_path = os.path.join(application_path, '..', 'sqlite-tools', 'lenovoDb')
+        db_path = os.path.join(application_path, '..')
         # 规范化路径，消除..等相对元素，获取绝对路径
         root_path = os.path.abspath(db_path)
         return root_path

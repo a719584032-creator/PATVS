@@ -4,6 +4,7 @@ import requests
 import os
 import json
 from common.logs import logger
+from config_manager.config import env_config
 
 
 class HttpRequestManager:
@@ -20,13 +21,23 @@ class HttpRequestManager:
             logger.error(f'HTTP GET request to {endpoint} failed: {e}')
             raise
 
-
     def post_data(self, endpoint, data=None, token=None):
         try:
             headers = {'x-access-tokens': token}
             response = requests.post(url=f'{self.base_url}{endpoint}', json=data, headers=headers, verify=False)
             response.raise_for_status()
             return response.json()
+        except requests.RequestException as e:
+            logger.error(f'HTTP POST request to {endpoint} failed: {e}')
+            raise
+
+    def post_file(self, endpoint, data=None, files=None, token=None):
+        try:
+            headers = {'x-access-tokens': token}
+            response = requests.post(url=f'{self.base_url}{endpoint}', data=data, files=files, headers=headers,
+                                     verify=False)
+            response.raise_for_status()
+            return response
         except requests.RequestException as e:
             logger.error(f'HTTP POST request to {endpoint} failed: {e}')
             raise
@@ -88,17 +99,14 @@ class HttpRequestManager:
             logger.error(f'HTTP GET request to /get_cases failed: {e}')
             raise
 
+
 def load_config(env):
     with open('config.json', 'r') as file:
         config = json.load(file)
         return config.get(env, {})
 
 
-# ENV = os.getenv('ENV', 'development')
-# config = load_config(ENV)
+
 # # 配置管理类实例
-# base_url = config.get('base_url')
-#base_url = 'http://127.0.0.1'
-base_url = 'http://10.184.32.52'
-#base_url = 'https://patvs.lenovo.com'
+base_url = env_config.global_setting.protocol + '://' + env_config.global_setting.domain
 http_manager = HttpRequestManager(base_url)

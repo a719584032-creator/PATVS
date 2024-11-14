@@ -271,16 +271,20 @@ class ModifyDialog(wx.Dialog):
         # 创建静态文本和输入框
         tester_label = wx.StaticText(panel, label="测试人员:")
         self.tester = wx.TextCtrl(panel, value="", size=(200, -1))
+        self.tester.SetHint("请输入测试人员，为空表示不修改")
         main_sizer.Add(tester_label, 0, wx.ALL, 5)
         main_sizer.Add(self.tester, 0, wx.EXPAND | wx.ALL, 5)
 
         project_label = wx.StaticText(panel, label="项目:")
         self.project = wx.TextCtrl(panel, value="", size=(200, -1))
+        self.project.SetHint("请输入项目，为空表示不修改")
         main_sizer.Add(project_label, 0, wx.ALL, 5)
         main_sizer.Add(self.project, 0, wx.EXPAND | wx.ALL, 5)
 
         workloading_label = wx.StaticText(panel, label="预估时间(min):")
-        self.workloading = wx.TextCtrl(panel, value="", size=(200, -1))
+        self.workloading = wx.TextCtrl(panel, value="", size=(200, -1), style=wx.TE_PROCESS_ENTER)
+        self.workloading.SetHint("请输入预估时间(min)，为空表示不修改")
+        self.workloading.Bind(wx.EVT_CHAR, self.on_char)  # 绑定输入事件，限制输入为数字
         main_sizer.Add(workloading_label, 0, wx.ALL, 5)
         main_sizer.Add(self.workloading, 0, wx.EXPAND | wx.ALL, 5)
 
@@ -310,6 +314,14 @@ class ModifyDialog(wx.Dialog):
             'project': self.project.GetValue(),
             'workloading': self.workloading.GetValue(),
         }
+
+    def on_char(self, event):
+        # 仅允许数字输入
+        keycode = event.GetKeyCode()
+        if chr(keycode).isdigit() or keycode == wx.WXK_BACK:
+            event.Skip()  # 允许数字输入和删除键
+        else:
+            return  # 阻止其他字符输入
 
 
 

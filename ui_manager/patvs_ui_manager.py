@@ -21,7 +21,10 @@ from common.logs import logger
 import win32con
 import win32api
 from requests_manager.http_requests_manager import http_manager
-
+import qrcode
+from io import BytesIO
+from PIL import Image
+import wx.lib.newevent
 
 
 def resource_path(relative_path):
@@ -406,6 +409,79 @@ class TestCasesPanel(wx.Panel):
             self.log_content.AppendText(message + '\n')  # 在文本控件的末尾添加文本
             logger.debug(message + '\n')
 
+    def upload_image(self):
+        # 创建文件选择对话框
+        with wx.FileDialog(self, "选择图片文件",
+                           wildcard="JPEG files (*.jpg;*.jpeg)|*.jpg;*.jpeg|PNG files (*.png)|*.png",
+                           style=wx.FD_OPEN | wx.FD_FILE_MUST_EXIST | wx.FD_MULTIPLE) as fileDialog:
+
+            if fileDialog.ShowModal() == wx.ID_CANCEL:
+                return  # 用户取消操作
+
+            # 获取选择的文件路径
+            pathnames = fileDialog.GetPaths()
+            logger.warning(pathnames)
+            if len(pathnames) > 5:
+                wx.MessageBox('最多只能上传5张图片。', '提示', wx.OK | wx.ICON_WARNING)
+                return False
+            try:
+                # 上传文件
+                self.upload_files_to_server(pathnames)
+                return True
+            except Exception as e:
+                wx.LogError(f"无法打开文件. 错误信息: {e}")
+                return False
+
+    def upload_files_to_server(self, file_paths):
+        files = []
+        for file_path in file_paths:
+            # 打开文件并保持打开状态，直到上传完成
+            file = open(file_path, 'rb')
+            files.append(('image_files', (os.path.basename(file_path), file, 'multipart/form-data')))
+
+        data = {'case_id': self.CaseID}
+        logger.warning(files)
+        try:
+            response = http_manager.post_file('/upload-images', files=files, data=data, token=self.token)
+            if response.status_code == 200:
+                wx.MessageBox('图片上传成功！', '信息', wx.OK | wx.ICON_INFORMATION)
+            else:
+                wx.MessageBox('图片上传失败！', '错误', wx.OK | wx.ICON_ERROR)
+        finally:
+            # 确保所有文件都被关闭
+            for _, (filename, file, _) in files:
+                file.close()
+
+    def generate_qr_code(self, upload_url):
+        qr = qrcode.QRCode(
+            version=1,
+            error_correction=qrcode.constants.ERROR_CORRECT_L,
+            box_size=10,
+            border=4,
+        )
+        qr.add_data(upload_url)
+        qr.make(fit=True)
+
+        img = qr.make_image(fill_color="black", back_color="white")
+        return img
+
+    def show_qr_code(self, img):
+        buffer = BytesIO()
+        img.save(buffer, format="PNG")
+        buffer.seek(0)
+
+        qr_image = wx.Image(buffer, wx.BITMAP_TYPE_PNG)
+        qr_bitmap = wx.Bitmap(qr_image)
+
+        dialog = wx.Dialog(self, title="扫描二维码上传图片")
+        sizer = wx.BoxSizer(wx.VERTICAL)
+        qr_control = wx.StaticBitmap(dialog, -1, qr_bitmap)
+        sizer.Add(qr_control, 0, wx.ALL, 10)
+        dialog.SetSizer(sizer)
+        dialog.Fit()
+        dialog.ShowModal()
+        dialog.Destroy()
+
     def test_result(self, event):
 
         clicked_button = event.GetEventObject()
@@ -413,6 +489,18 @@ class TestCasesPanel(wx.Panel):
         if clicked_button is self.result_buttons['Pass']:
             # 处理 pass
             logger.info(f"Pass Button clicked {self.CaseID}")
+            action_and_num = http_manager.get_params(f'/get_case_actions_and_num/{self.CaseID}').get('actions_and_num')
+            if len(action_and_num) == 1 and '时间' in action_and_num[0]:
+                # # 生成上传图片的URL， 扫码上传需要能连接公司网络。
+                # upload_url = f"http://yourserver.com/upload-image?case_id={self.CaseID}&token={self.token}"
+                # img = self.generate_qr_code(upload_url)
+                # self.show_qr_code(img)
+                # return
+                # 强制用户上传图片
+                image_uploaded = self.upload_image()
+                if not image_uploaded:
+                    wx.MessageBox('上传图片是必填操作，请上传图片后再继续。', '提示', wx.OK | wx.ICON_WARNING)
+                    return  # 如果用户没有上传图片，则返回，阻止后续操作
             http_manager.update_end_time_case_id(self.CaseID, 'Pass', token=self.token)
             wx.CallAfter(self.case_enable)
             wx.CallAfter(self.refresh_node_case_status, case_status=case_result)
@@ -426,6 +514,19 @@ class TestCasesPanel(wx.Panel):
                 if input_content:
                     logger.info(f"Fail Button clicked, Content: {input_content}")
                     http_manager.update_end_time_case_id(self.CaseID, case_result, f'Fail: {input_content}', self.token)
+                    # 设置事件以通知监控线程停止
+                    self.patvs_monitor.stop_event = False
+                    # 当用例为 block 时，需要主动去停止 messageLoop 的循环
+                    if self.patvs_monitor.msg_loop_thread_id:
+                        logger.warning("进入终止消息循环")
+                        try:
+                            win32api.PostThreadMessage(self.patvs_monitor.msg_loop_thread_id, win32con.WM_QUIT, 0, 0)
+                        except pywintypes.error as e:
+                            logger.warning(f"{e}")
+                        except:
+                            pass
+                        self.patvs_monitor.msg_loop_thread_id = None
+                    time.sleep(1)  # block后线程终止需要一些时间，防止出现意外解禁按钮
                     wx.CallAfter(self.case_enable)
                     wx.CallAfter(self.refresh_node_case_status, case_status=case_result)
                     wx.CallAfter(self.update_statistics)
@@ -515,7 +616,7 @@ class TestCasesPanel(wx.Panel):
         for button in self.result_buttons:
             self.result_buttons[button].Show()
         self.result_buttons['Pass'].Disable()
-        self.result_buttons['Fail'].Disable()
+        #  self.result_buttons['Fail'].Disable()
         self.Layout()
 
     def case_enable(self):
@@ -967,13 +1068,14 @@ class PermutationDialog(wx.Dialog):
         # 创建 Excel 工作簿
         wb = openpyxl.Workbook()
         ws = wb.active
+        ws.title = "排列组合"
 
-        # 写入列标题
-        ws.append(columns)
+        # 写入固定的用例模板标题
+        ws.append(["测试机型", "用例标题", "前置条件", "用例步骤", "预期结果"])
 
         # 写入数据行
-        for row in data:
-            ws.append(row)
+        for combination in data:
+            ws.append(["", "[时间+1]" + ", ".join(columns), "", ", ".join(combination), "功能正常"])
 
         # 保存文件
         wb.save(file_path)

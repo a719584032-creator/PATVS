@@ -185,7 +185,7 @@ class MainApp(wx.App):
             if role == 'admin':
                 frame = AdminWindow(None, title="Test Tracking System-Admin", token=token)
             else:
-                frame = MainWindow(None, title="Test Tracking System-1.0.3", username=username, token=token)
+                frame = MainWindow(None, title="Test Tracking System-1.0.4", username=username, token=token)
 
             self.SetTopWindow(frame)
             frame.Show(True)

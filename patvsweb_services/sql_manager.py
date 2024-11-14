@@ -727,3 +727,17 @@ class TestCaseManager:
             logger.warning(update_query)
             params.append(plan_id)
         self.cursor.execute(update_query, params)
+
+    def upload_image_file(self, case_id, original_filename, stored_filename, s3_key, file_size, mime_type):
+        # 执行插入操作
+        self.cursor.execute(
+            """
+            INSERT INTO testcase_image (CaseID, OriginalFileName, StoredFileName, FilePath, FileSize, MimeType, UploadDate)
+            VALUES (%s, %s, %s, %s, %s, %s, %s)
+            """,
+            (case_id, original_filename, stored_filename, s3_key, file_size, mime_type, datetime.now()))
+
+        # 获取最后插入的ID
+        self.cursor.execute("SELECT LAST_INSERT_ID()")
+        image_id = self.cursor.fetchone()[0]
+        return image_id
