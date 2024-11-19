@@ -42,10 +42,10 @@ class HttpRequestManager:
             logger.error(f'HTTP POST request to {endpoint} failed: {e}')
             raise
 
-    def get_plan_names(self, username, token=None):
+    def get_plan_names(self, userid, project_name, token=None):
         try:
             headers = {'x-access-tokens': token}
-            response = requests.get(f'{self.base_url}/get_plan_names/{username}', headers=headers, verify=False)
+            response = requests.get(f'{self.base_url}/get_plan_names/{userid}/{project_name}', headers=headers, verify=False)
             response.raise_for_status()
             data = response.json()
             return data.get('plan_names')
@@ -53,11 +53,10 @@ class HttpRequestManager:
             logger.error(f'HTTP GET request to get_plan_names failed: {e}')
             raise
 
-    def get_sheet_names(self, plan_name, username, token=None):
+    def get_sheet_names(self, plan_id, token=None):
         try:
             headers = {'x-access-tokens': token}
-            params = {'plan_name': plan_name, 'username': username}
-            response = requests.get(f'{self.base_url}/get_sheet_names', params=params, headers=headers, verify=False)
+            response = requests.get(f'{self.base_url}/get_sheet_names/{plan_id}', headers=headers, verify=False)
             response.raise_for_status()
             data = response.json()
             return data.get('sheet_names_with_ids')
@@ -88,10 +87,10 @@ class HttpRequestManager:
             logger.error(f'HTTP GET request to /get_plan_names failed: {e}')
             raise
 
-    def get_cases_by_sheet_id(self, sheet_id, token=None):
+    def get_cases_by_sheet_id(self, sheet_id, model_id, token=None):
         try:
             headers = {'x-access-tokens': token}
-            response = requests.get(f'{self.base_url}/get_cases/{sheet_id}', headers=headers, verify=False)
+            response = requests.get(f'{self.base_url}/get_cases_status/{sheet_id}/{model_id}', headers=headers, verify=False)
             response.raise_for_status()
             data = response.json()
             return data

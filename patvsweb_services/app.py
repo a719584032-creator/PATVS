@@ -131,8 +131,9 @@ def insert_case(current_user):
     data = request.json
     plan_name = data.get('plan_name')
     project_name = data.get('project_name')
+    project_phase = data.get('project_phase')
     sheet_name = data.get('sheet_name')
-    tester = data.get('tester')
+    userid = data.get('tester')
     workloading = data.get('workloading')
     filename = data.get('filename')
     cases = data.get('cases')
@@ -140,14 +141,15 @@ def insert_case(current_user):
 
     logger.info(f"Inserting case for plan: {plan_name}, project: {project_name}, sheet: {sheet_name}")
 
-    if not plan_name or not project_name or not sheet_name or not tester or not workloading or not filename or not cases or not model_name:
+    if not plan_name or not project_name or not project_phase or not sheet_name or not userid or not workloading or not filename or not cases or not model_name:
         return jsonify({'error': 'Missing required parameters'}), 400
 
     conn = get_db_connection()
     cursor = conn.cursor()
     try:
         manager = TestCaseManager(conn, cursor)
-        manager.insert_case_by_filename(plan_name, project_name, sheet_name, tester, workloading, filename, cases,
+        manager.insert_case_by_filename(plan_name, project_name, project_phase, sheet_name, userid, workloading,
+                                        filename, cases,
                                         model_name)
         conn.commit()
         return jsonify({'message': 'Case inserted successfully.'}), 200
@@ -235,15 +237,66 @@ def get_comments_for_case():
         conn.close()
 
 
-@app.route('/get_plan_names/<string:username>', methods=['GET'])
-def get_plan_names(username):
-    logger.info(f"Fetching plan names for username: {username}")
+@app.route('/get_project_names/<int:userid>', methods=['GET'])
+def get_project_names(userid):
+    logger.info(f"Fetching project names for userid: {userid}")
     conn = get_db_connection()
     cursor = conn.cursor()
     try:
         manager = TestCaseManager(conn, cursor)
-        plan_names = manager.select_all_plan_names_by_username(username)
+        project_names = manager.select_all_project_names_by_username(userid)
+        return jsonify({'project_names': project_names}), 200
+    except Exception as e:
+        logger.error(f"An error occurred: {e}")
+        return jsonify({'error': str(e)}), 500
+    finally:
+        cursor.close()
+        conn.close()
+
+
+@app.route('/get_plan_names/<int:userid>/<string:project_name>', methods=['GET'])
+def get_plan_names(userid, project_name):
+    logger.info(f"Fetching plan project name for : {project_name}, usrid for : {userid}")
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    try:
+        manager = TestCaseManager(conn, cursor)
+        plan_names = manager.select_all_plan_names_by_project(userid, project_name)
         return jsonify({'plan_names': plan_names}), 200
+    except Exception as e:
+        logger.error(f"An error occurred: {e}")
+        return jsonify({'error': str(e)}), 500
+    finally:
+        cursor.close()
+        conn.close()
+
+
+@app.route('/get_model_names/<int:plan_id>', methods=['GET'])
+def get_model_names(plan_id):
+    logger.info(f"Fetching plan id for : {plan_id}")
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    try:
+        manager = TestCaseManager(conn, cursor)
+        model_names = manager.select_all_model_names_by_plan_id(plan_id)
+        return jsonify({'model_names': model_names}), 200
+    except Exception as e:
+        logger.error(f"An error occurred: {e}")
+        return jsonify({'error': str(e)}), 500
+    finally:
+        cursor.close()
+        conn.close()
+
+
+@app.route('/get_sheet_names/<int:plan_id>', methods=['GET'])
+def get_sheet_names(plan_id):
+    logger.info(f"Fetching plan id for : {plan_id}")
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    try:
+        manager = TestCaseManager(conn, cursor)
+        sheet_names_with_ids = manager.select_all_sheet_names_by_plan_id(plan_id)
+        return jsonify({'sheet_names_with_ids': sheet_names_with_ids}), 200
     except Exception as e:
         logger.error(f"An error occurred: {e}")
         return jsonify({'error': str(e)}), 500
@@ -260,27 +313,6 @@ def get_plan_names_by_admin():
         manager = TestCaseManager(conn, cursor)
         plan_names = manager.select_all_plan_names()
         return jsonify({'plan_names': plan_names}), 200
-    except Exception as e:
-        logger.error(f"An error occurred: {e}")
-        return jsonify({'error': str(e)}), 500
-    finally:
-        cursor.close()
-        conn.close()
-
-
-@app.route('/get_sheet_names', methods=['GET'])
-def get_sheet_names():
-    username = request.args.get('username')
-    plan_name = request.args.get('plan_name')
-    logger.info(f"Fetching sheet names for username: {username} and plan_name: {plan_name}")
-    if not username or not plan_name:
-        return jsonify({'error': 'Missing required parameters'}), 400
-    conn = get_db_connection()
-    cursor = conn.cursor()
-    try:
-        manager = TestCaseManager(conn, cursor)
-        sheet_names_with_ids = manager.select_all_sheet_names_by_plan_and_username(plan_name, username)
-        return jsonify({'sheet_names_with_ids': sheet_names_with_ids}), 200
     except Exception as e:
         logger.error(f"An error occurred: {e}")
         return jsonify({'error': str(e)}), 500
@@ -374,21 +406,21 @@ def get_plan_name(filename):
         conn.close()
 
 
-@app.route('/get_cases_by_case_id/<int:case_id>', methods=['GET'])
-def get_cases_by_case_id(case_id):
-    logger.info(f"Fetching cases for case_id: {case_id}")
+@app.route('/get_cases_status/<int:sheet_id>/<int:model_id>', methods=['GET'])
+def get_cases_status(sheet_id, model_id):
+    logger.info(f"Fetching cases for sheet_id: {sheet_id}, model_id: {model_id}")
     conn = get_db_connection()
     cursor = conn.cursor()
     try:
         manager = TestCaseManager(conn, cursor)
-        cases = manager.select_cases_by_case_id(case_id)
+        cases = manager.select_case_status(model_id, sheet_id)
         formatted_cases = []
         for case in cases:
             case_list = list(case)
-            case_list[8] = case_list[8].strftime('%Y-%m-%d %H:%M:%S') if case_list[8] else None
-            case_list[9] = case_list[9].strftime('%Y-%m-%d %H:%M:%S') if case_list[9] else None
+            case_list[3] = case_list[3].strftime('%Y-%m-%d %H:%M:%S') if case_list[3] else None
+            case_list[4] = case_list[4].strftime('%Y-%m-%d %H:%M:%S') if case_list[4] else None
             formatted_cases.append(case_list)
-        return jsonify({'cases': formatted_cases}), 200
+        return jsonify({case[11]: case for case in formatted_cases}), 200
     except Exception as e:
         logger.error(f"An error occurred: {e}")
         return jsonify({'error': str(e)}), 500

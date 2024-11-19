@@ -55,6 +55,7 @@ class TestCasesPanel(wx.Panel):
         self.stop_event = True
         self.patvs_monitor = Patvs_Fuction(self, self.stop_event)
         self.username = username  # 保存用户名
+        self.userid = http_manager.get_params(f'/get_userid/{self.username}').get('user_id')  # 保存用户名
         self.token = token
         self.splitter = wx.SplitterWindow(self)
         # 初始化 log_splitter
@@ -104,9 +105,18 @@ class TestCasesPanel(wx.Panel):
         self.annex_button.Bind(wx.EVT_BUTTON, self.permutation_and_combination)
 
         # 用例筛选下拉框
-        self.plan_name_combo = wx.ComboBox(self, choices=http_manager.get_plan_names(self.username))
+        # 添加新的下拉框用于显示 sheet_name
+        self.project_name_combo = wx.ComboBox(self, choices=http_manager.get_params(f'/get_project_names/{self.userid}').get('project_names'))
+        self.project_name_combo.Bind(wx.EVT_COMBOBOX, self.on_project_select)
+        self.project_name_combo.Bind(wx.EVT_MOTION, self.on_project_hover)
+
+        self.plan_name_combo = wx.ComboBox(self)
         self.plan_name_combo.Bind(wx.EVT_COMBOBOX, self.on_plan_select)
         self.plan_name_combo.Bind(wx.EVT_MOTION, self.on_plan_hover)
+
+        self.model_name_combo = wx.ComboBox(self)
+        self.model_name_combo.Bind(wx.EVT_COMBOBOX, self.on_model_select)
+        self.model_name_combo.Bind(wx.EVT_MOTION, self.on_model_hover)
 
         # 添加新的下拉框用于显示 sheet_name
         self.sheet_name_combo = wx.ComboBox(self)
@@ -126,6 +136,12 @@ class TestCasesPanel(wx.Panel):
         buttonSizer.Add(self.config_button, 0, wx.ALL, 5)
         buttonSizer.Add(self.status_button, 0, wx.ALL, 5)
         buttonSizer.Add(self.annex_button, 0, wx.ALL, 5)
+
+        self.testerLabel = wx.StaticText(self, label=f"测试人员: {username}")
+        labelSizer.Add(self.testerLabel, 0, wx.ALL, 5)
+
+        self.test_phaseLabel = wx.StaticText(self, label=f"测试阶段: N/A")
+        labelSizer.Add(self.test_phaseLabel, 0, wx.ALL, 5)
 
         # 添加统计的标签（初始为空）
         self.case_time_total = wx.StaticText(self, label="总耗时: N/A")
@@ -161,12 +177,17 @@ class TestCasesPanel(wx.Panel):
 
         # 单独创建一个水平盒子来放置 case_search_combo 下拉框
         caseSearchSizer = wx.BoxSizer(wx.HORIZONTAL)
-        self.testerLabel = wx.StaticText(self, label=f"测试人员: {username}")
-        caseSearchSizer.Add(self.testerLabel, 0, wx.ALL, 5)
+        self.projectLabel = wx.StaticText(self, label=f"项目")
+        caseSearchSizer.Add(self.projectLabel, 0, wx.ALL, 5)
+        caseSearchSizer.Add(self.project_name_combo, 0, wx.ALL, 5)
 
         self.planLabel = wx.StaticText(self, label="测试计划")
         caseSearchSizer.Add(self.planLabel, 0, wx.ALL, 5)
         caseSearchSizer.Add(self.plan_name_combo, 0, wx.ALL, 5)
+
+        self.modelLabel = wx.StaticText(self, label="测试机型")
+        caseSearchSizer.Add(self.modelLabel, 0, wx.ALL, 5)
+        caseSearchSizer.Add(self.model_name_combo, 0, wx.ALL, 5)
 
         self.sheetLabel = wx.StaticText(self, label="测试用例")
         caseSearchSizer.Add(self.sheetLabel, 0, wx.ALL, 5)
@@ -251,12 +272,55 @@ class TestCasesPanel(wx.Panel):
             else:
                 self.icon_indices[status] = self.image_list.Add(transparent_bmp)
 
+    def on_project_select(self, event):
+        logger.warning("开始调用 on_project_select")
+        # 获取选择的项目名称
+        project_name = self.project_name_combo.GetValue()
+
+        # 根据项目名称获取计划名称
+        plan_names_with_ids = http_manager.get_plan_names(self.userid, project_name)
+
+        # 清空并重新填充 plan_name_combo
+        self.plan_name_combo.Clear()
+        for plan_id, plan_name in plan_names_with_ids:
+            self.plan_name_combo.Append(plan_name, plan_id)
+
+        # 清空 sheet_name_combo，因为项目改变可能导致计划和用例表的变化
+        self.sheet_name_combo.Clear()
+        self.tree.Hide()  # 隐藏用例树
+        self.clear_statistics()  # 清空统计信息
+        logger.warning("结束调用 on_project_select")
+
     def on_plan_select(self, event):
         # 选择测试计划后，更新用例表下拉框
         logger.warning('开始调用 plan select')
-        plan_name = self.plan_name_combo.GetValue()
-        sheet_names_with_ids = http_manager.get_sheet_names(plan_name, self.username)
+        selected_index = self.plan_name_combo.GetSelection()
+        if selected_index != wx.NOT_FOUND:
+            self.plan_id = self.plan_name_combo.GetClientData(selected_index)
+            self.plan_name = self.plan_name_combo.GetString(selected_index)
+            logger.warning(self.plan_id)
+            logger.warning(self.plan_name)
+        model_names_with_ids = http_manager.get_params(f'/get_model_names/{self.plan_id}').get('model_names')
 
+        # 清空并重新填充 model_name_combo
+        self.model_name_combo.Clear()
+        for model_id, model_name in model_names_with_ids:
+            self.model_name_combo.Append(model_name, model_id)
+        self.tree.Hide()  # 选择计划后先隐藏用例树，等待选择用例表后再显示
+        # 清空统计信息
+        self.clear_statistics()
+        logger.warning('调用 plan select 结束')
+
+    def on_model_select(self, event):
+        # 选择测试计划后，更新测试机型
+        logger.warning('开始调用 model select')
+        selected_index = self.model_name_combo.GetSelection()
+        if selected_index != wx.NOT_FOUND:
+            self.model_id = self.model_name_combo.GetClientData(selected_index)
+            self.model_name = self.model_name_combo.GetString(selected_index)
+            logger.warning(self.model_id)
+            logger.warning(self.model_name)
+        sheet_names_with_ids = http_manager.get_sheet_names(self.plan_id)
         # 清空并重新填充 sheet_name_combo
         self.sheet_name_combo.Clear()
         for sheet_id, sheet_name in sheet_names_with_ids:
@@ -264,7 +328,7 @@ class TestCasesPanel(wx.Panel):
         self.tree.Hide()  # 选择计划后先隐藏用例树，等待选择用例表后再显示
         # 清空统计信息
         self.clear_statistics()
-        logger.warning('调用 plan select 结束')
+        logger.warning('调用 model select 结束')
 
     def on_sheet_select(self, event):
         # 选择用例表后，更新用例树
@@ -272,18 +336,32 @@ class TestCasesPanel(wx.Panel):
         if selected_index != wx.NOT_FOUND:
             self.sheet_id = self.sheet_name_combo.GetClientData(selected_index)
             self.sheet_name = self.sheet_name_combo.GetString(selected_index)
-            self.case_tree(self.sheet_id, self.sheet_name)  # 使用 sheet_id 获取用例树
+            self.case_tree(self.sheet_id, self.model_id)  # 使用 sheet_id 获取用例树
             self.tree.Show()  # 选择用例表后显示用例树
             # 更新统计信息
             self.update_statistics()
             self.CaseID = None
 
     # 绑定鼠标悬停事件的处理函数
+    def on_project_hover(self, event):
+        # 获取当前选择的内容
+        selection = self.project_name_combo.GetStringSelection()
+        if selection:
+            self.project_name_combo.SetToolTip(selection)
+        event.Skip()
+
     def on_plan_hover(self, event):
         # 获取当前选择的内容
         selection = self.plan_name_combo.GetStringSelection()
         if selection:
             self.plan_name_combo.SetToolTip(selection)
+        event.Skip()
+
+    def on_model_hover(self, event):
+        # 获取当前选择的内容
+        selection = self.model_name_combo.GetStringSelection()
+        if selection:
+            self.model_name_combo.SetToolTip(selection)
         event.Skip()
 
     def on_sheet_hover(self, event):
@@ -674,7 +752,7 @@ class TestCasesPanel(wx.Panel):
 
             def complete_upload():
                 try:
-                    run_main(pathname, self.username, self.token)
+                    run_main(pathname, self.userid, self.token)
                     wx.CallAfter(wx.MessageBox, "文件上传和解析成功", "提示", wx.OK | wx.ICON_INFORMATION)
                 except Exception as e:
                     # 格式校验出错
@@ -922,7 +1000,7 @@ class TestCasesPanel(wx.Panel):
         except IOError as e:
             wx.LogError(f"无法保存文件 '{filepath}'. 错误: {e}")
 
-    def case_tree(self, sheet_id, sheet_name):
+    def case_tree(self, sheet_id, model_id):
         """
         负责展示用例左侧节点
         :param sheet_id: 用例文件
@@ -930,25 +1008,23 @@ class TestCasesPanel(wx.Panel):
         """
         logger.warning("开始展示用例树节点")
         self.tree.DeleteAllItems()  # 清空现有的树状结构
-        self.testCases = http_manager.get_cases_by_sheet_id(sheet_id)
+        self.testCases = http_manager.get_cases_by_sheet_id(sheet_id, model_id)
         self.update_statistics()
         if self.tree.GetImageList() is None:
             self.tree.AssignImageList(self.image_list)
 
         # 添加根节点并设置图标
-        root = self.tree.AddRoot(sheet_name, self.icon_indices['Root'])
+        root = self.tree.AddRoot(self.sheet_name, self.icon_indices['Root'])
         for key, value in self.testCases.items():
             case_id = key
             case_status = value[0]
-            # 按照 机型→标题 展示title
-            case_model = (value[3] + '→') if value[3] else ''
-            case_title = value[4]
+            case_title = value[6]
             # 根据状态添加相应的图标
             if case_status in self.icon_indices:
-                case_node = self.tree.AppendItem(root, case_model + case_title)
+                case_node = self.tree.AppendItem(root, case_title)
                 self.tree.SetItemImage(case_node, self.icon_indices[case_status])  # 设置节点图像
             else:
-                case_node = self.tree.AppendItem(root, case_model + case_title)
+                case_node = self.tree.AppendItem(root, case_title)
 
             # 将CaseID存储在节点数据中
             self.tree.SetItemData(case_node, case_id)
@@ -979,13 +1055,13 @@ class TestCasesPanel(wx.Panel):
             case = self.testCases[self.CaseID]
             self.content.Clear()
             self.log_content.Clear()
-            self.content.SetValue(f"测试机型: {case[3]}\n\n")
-            self.content.AppendText(f"用例标题:\n{case[4]}\n\n")
-            self.content.AppendText(f"前置条件:\n{case[5]}\n\n")
-            self.content.AppendText(f"操作步骤:\n{case[6]}\n\n")
+            self.content.SetValue(f"测试机型: {self.model_name}\n\n")
+            self.content.AppendText(f"用例标题:\n{case[6]}\n\n")
+            self.content.AppendText(f"前置条件:\n{case[7]}\n\n")
+            self.content.AppendText(f"操作步骤:\n{case[8]}\n\n")
             self.content.SetInsertionPointEnd()  # 移动光标到末尾以便于添加蓝色文本
             self.content.SetDefaultStyle(wx.TextAttr(wx.BLUE))
-            self.content.AppendText(f"预期结果:\n{case[7]}")
+            self.content.AppendText(f"预期结果:\n{case[9]}")
             # 再次将文本颜色设置回默认颜色，以防止后续文本也变为蓝色
             self.content.SetDefaultStyle(wx.TextAttr(wx.BLACK))
             wx.CallAfter(self.scroll_to_top)  # 调用滚动方法

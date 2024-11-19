@@ -5,6 +5,7 @@ from common.logs import logger
 from requests_manager.http_requests_manager import http_manager
 import os
 import wx
+import re
 
 
 # 检查合并单元格是否符合特定规则
@@ -25,8 +26,8 @@ def get_all_test(file_path, sheet_name):
     # 获取工作表中所有合并单元格的范围信息，并存入merged_ranges列表。
     merged_ranges = list(sheet.merged_cells.ranges)
     # 获取第19行机型数据
-    row_19_data = [cell.value for cell in sheet[19] if cell.value is not None]
-    model_name = row_19_data[2:]
+    # row_19_data = [cell.value for cell in sheet[19] if cell.value is not None]
+    # model_name = row_19_data[2:]
 
     # 初始化用例信息存储结构
     case = {
@@ -69,7 +70,7 @@ def get_all_test(file_path, sheet_name):
                 'steps': None,
                 'expected': None
             }
-    return model_name, all_case
+    return all_case
 
 
 # def validate_excel_format(file_name):
@@ -185,6 +186,15 @@ def validate_template1(workbook):
         raise ValueError(
             f"Plan Information sheet 页中 A1 单元格的值必须为 'Plan name', 实际值为 {plan_info_sheet.cell(1, 1).value}")
 
+    # 校验 Plan Information 页中单元格是否为空
+    if not plan_info_sheet.cell(1, 4).value:
+        raise ValueError("Plan Information sheet 页中 project_name 的值不能为空")
+    if not plan_info_sheet.cell(4, 4).value:
+        raise ValueError("Plan Information sheet 页中 phase 的值不能为空")
+    if not plan_info_sheet.cell(8, 2).value:
+        raise ValueError("Plan Information sheet 页中 objective 的值不能为空")
+    if not extract_values_from_brackets(plan_info_sheet.cell(8, 2).value):
+        raise ValueError("Plan Information sheet 页中 objective 的值必须使用[]括起来")
     value = case_list_sheet.cell(1, 2).value
     if value and value.strip().lower() != 'case name':
         raise ValueError(
@@ -227,7 +237,20 @@ def validate_template2(workbook):
     return 'power'
 
 
-def run_main(file_path, username, token):
+def extract_values_from_brackets(text):
+    """
+    从给定的字符串中提取所有中括号内的值，返回一个列表。
+
+    :param text: 包含中括号的字符串
+    :return: 包含中括号内所有值的列表
+    """
+    # 使用正则表达式查找所有中括号内的内容
+    pattern = r'\[([^\]]+)\]'
+    values = re.findall(pattern, text)
+    return values
+
+
+def run_main(file_path, userid, token):
     """
     上传case
     """
@@ -241,6 +264,9 @@ def run_main(file_path, username, token):
         if result:
             raise ValueError(f"当前计划名: {result} 已存在，请勿重复上传")
         project_name = data.get_value_by_rc(1, 4)
+        project_phase = data.get_value_by_rc(4, 4)
+        # 使用正则表达式查找所有中括号内的内容
+        model_name = extract_values_from_brackets(data.get_value_by_rc(8, 2))
         logger.info(f'project_name is {project_name}')
         data.active_sheet('Case List')
         all_sheet = data.getColValues(2)[2:]
@@ -253,8 +279,9 @@ def run_main(file_path, username, token):
         sheet_and_tester_and_workloading = list(zip(all_sheet_with_prefix, all_tester, all_workloading))
         logger.info(f'sheet_and_tester_and_workloading is {sheet_and_tester_and_workloading}')
         for i in sheet_and_tester_and_workloading:
-            model_name, all_case = get_all_test(file_path, i[0])
-            case_data = {'plan_name': plan_name, 'project_name': project_name, 'sheet_name': i[0], 'tester': username,
+            all_case = get_all_test(file_path, i[0])
+            case_data = {'plan_name': plan_name, 'project_phase': project_phase, 'project_name': project_name,
+                         'sheet_name': i[0], 'tester': userid,
                          'workloading': i[2], 'cases': all_case, 'model_name': model_name, 'filename': file_path}
             http_manager.post_data('/insert_case', data=case_data, token=token)
     elif template == 'power':
@@ -262,7 +289,7 @@ def run_main(file_path, username, token):
         data = read_test_cases_from_excel(file_path)
         for sheet, cases in data.items():
             case_data = {'filename': file_path, 'sheet_name': sheet, 'project_name': 'power-project',
-                         'tester': username, 'workloading': '100(Min)', 'cases': cases}
+                         'tester': userid, 'workloading': '100(Min)', 'cases': cases}
             http_manager.post_data('/insert_case_by_power', data=case_data, token=token)
     else:
         logger.error(template)

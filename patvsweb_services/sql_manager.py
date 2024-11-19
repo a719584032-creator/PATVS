@@ -84,8 +84,8 @@ class TestCaseManager:
 
         return comments_map
 
-    def insert_case_by_filename(self, plan_name, project_name, sheet_name, tester, workloading, filename, cases,
-                                model_name):
+    def insert_case_by_filename(self, plan_name, project_name, project_phase, sheet_name, userid, workloading, filename,
+                                cases, model_names):
         filename = os.path.basename(filename)  # 获取文件名
         try:
             # 查询是否已经存在相同的 plan_name
@@ -97,9 +97,34 @@ class TestCaseManager:
                 plan_id = result[0]
             else:
                 # 插入新的 TestPlan 记录
-                plan_query = "INSERT INTO TestPlan (plan_name, filename) VALUES (%s, %s)"
-                self.cursor.execute(plan_query, (plan_name, filename))
+                plan_query = "INSERT INTO TestPlan (plan_name, filename, project_name, project_phase, userid) VALUES (%s, %s, %s, %s, %s)"
+                self.cursor.execute(plan_query, (plan_name, filename, project_name, project_phase, userid))
+                logger.warning(" 插入 testplan 表成功")
                 plan_id = self.cursor.lastrowid
+
+            # 插入到 Model 表并建立与 TestPlan 的关联
+            for model_name in model_names:
+                # 检查 Model 表中是否已经存在该 model_name
+                self.cursor.execute("SELECT ModelID FROM Model WHERE ModelName = %s", (model_name,))
+                model_result = self.cursor.fetchone()
+
+                if model_result:
+                    # 如果存在，获取其 ModelID
+                    model_id = model_result[0]
+                else:
+                    # 如果不存在，插入新的 Model 记录
+                    model_query = "INSERT INTO Model (ModelName) VALUES (%s)"
+                    self.cursor.execute(model_query, (model_name,))
+                    model_id = self.cursor.lastrowid
+                    logger.warning(" 插入 Model 表成功")
+
+                # 检查 TestPlanModel 表中是否已经存在该 PlanID 和 ModelID 的组合
+                self.cursor.execute("SELECT 1 FROM TestPlanModel WHERE PlanID = %s AND ModelID = %s",
+                                    (plan_id, model_id))
+                if not self.cursor.fetchone():
+                    # 如果组合不存在，则插入新的关联记录
+                    self.cursor.execute("INSERT INTO TestPlanModel (PlanID, ModelID) VALUES (%s, %s)",
+                                        (plan_id, model_id))
 
             # 检查是否已经存在相同的 sheet_name
             self.cursor.execute("SELECT id FROM TestSheet WHERE sheet_name = %s AND plan_id = %s",
@@ -112,16 +137,15 @@ class TestCaseManager:
                 return
             else:
                 # 插入新的 TestSheet 记录
-                sheet_query = "INSERT INTO TestSheet (sheet_name, project_name, tester, workloading, plan_id) VALUES (%s, %s, %s, %s, %s)"
-                self.cursor.execute(sheet_query, (sheet_name, project_name, tester, workloading, plan_id))
+                sheet_query = "INSERT INTO TestSheet (sheet_name, tester, workloading, plan_id) VALUES (%s, %s, %s, %s)"
+                self.cursor.execute(sheet_query, (sheet_name, userid, workloading, plan_id))
                 sheet_id = self.cursor.lastrowid
 
                 # 插入到 TestCase 表
-                case_query = "INSERT INTO TestCase (ModelName, CaseTitle, CaseSteps, ExpectedResult, sheet_id) VALUES (%s, %s, %s, %s, %s)"
+                case_query = "INSERT INTO TestCase (CaseTitle, CaseSteps, ExpectedResult, sheet_id) VALUES (%s, %s, %s, %s)"
                 for case in cases:
-                    for model in model_name:
-                        self.cursor.execute(case_query,
-                                            (model, case['title'], case['steps'], case['expected'], sheet_id))
+                    self.cursor.execute(case_query,
+                                        (case['title'], case['steps'], case['expected'], sheet_id))
         except Exception as err:
             logger.error(f"Error: {err}")
             raise Exception(f"Error: {err}")
@@ -174,17 +198,71 @@ class TestCaseManager:
         all_case = self.cursor.fetchall()
         return all_case
 
-    def select_all_plan_names_by_username(self, username):
-        query = """
-        SELECT DISTINCT tp.plan_name
-        FROM TestPlan tp
-        JOIN TestSheet ts ON tp.id = ts.plan_id
-        WHERE ts.tester = %s
-        """
-        self.cursor.execute(query, (username,))
+    def select_all_project_names_by_username(self, userid):
+        query = "SELECT DISTINCT project_name FROM TestPlan WHERE userId = %s"
+        self.cursor.execute(query, (userid,))
         result = self.cursor.fetchall()
         logger.info(result)
-        return [plan_name[0] for plan_name in result]
+        return [project_name[0] for project_name in result]
+
+    def select_all_plan_names_by_project(self, userid, project_name):
+        query = """
+        SELECT id, plan_name FROM TestPlan WHERE userid = %s and project_name = %s
+        """
+        self.cursor.execute(query, (userid, project_name))
+        result = self.cursor.fetchall()
+        logger.info(result)
+        # 返回id和plan_names
+        return result if result else []
+
+    def select_all_model_names_by_plan_id(self, plan_id):
+        query = """
+            SELECT m.ModelID, m.ModelName
+            FROM model m
+            JOIN testplanmodel tpm ON m.ModelID = tpm.ModelID
+            WHERE tpm.PlanID = %s
+        """
+        self.cursor.execute(query, (plan_id,))
+        result = self.cursor.fetchall()
+        logger.info(result)
+        # 返回 ModelID 和 ModelName 列表
+        return result if result else []
+
+    def select_all_sheet_names_by_plan_id(self, plan_id):
+        query = """
+        SELECT id, sheet_name FROM TestSheet where plan_id = %s
+        """
+        self.cursor.execute(query, (plan_id,))
+        result = self.cursor.fetchall()
+        logger.info(result)
+        # 返回id和sheet_names
+        return result if result else []
+
+    def select_case_status(self, model_id, sheet_id):
+        query = """
+        SELECT   
+        te.TestResult,
+        te.TestTime,
+        te.TestNum,
+        te.StartTime,
+        te.EndTime,
+        te.Comment,
+        tc.CaseTitle,
+        tc.PreConditions,
+        tc.CaseSteps,
+        tc.ExpectedResult,
+        tc.Actions,
+        tc.CaseID,
+        tc.sheet_id
+        FROM testcase tc
+        LEFT JOIN testexecution te ON te.CaseID = tc.CaseID AND te.ModelID = %s
+        WHERE tc.sheet_id = %s
+        """
+        self.cursor.execute(query, (model_id, sheet_id))
+        result = self.cursor.fetchall()
+        logger.info(result)
+        # 返回所有
+        return result
 
     def select_all_plan_names(self):
         query = "SELECT plan_name FROM TestPlan "
@@ -192,22 +270,6 @@ class TestCaseManager:
         result = self.cursor.fetchall()
         logger.info(result)
         return [plan_name[0] for plan_name in result]
-
-    def select_all_sheet_names_by_plan_and_username(self, plan_name, username):
-        query = """
-        SELECT ts.id, ts.sheet_name
-        FROM TestSheet ts
-        JOIN TestPlan tp ON ts.plan_id = tp.id
-        WHERE tp.plan_name = %s AND ts.tester = %s
-        """
-        self.cursor.execute(query, (plan_name, username))
-        result = self.cursor.fetchall()
-        logger.info(result)
-        if result:
-            # 返回id和sheet_names
-            return result
-        else:
-            return []
 
     def select_all_sheet_names_by_plan(self, plan_name):
         query = """
