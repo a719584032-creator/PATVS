@@ -64,8 +64,8 @@ class HttpRequestManager:
             logger.error(f'HTTP GET request to /get_plan_names failed: {e}')
             raise
 
-    def update_end_time_case_id(self, case_id, case_result, input_content=None, token=None):
-        data = {'case_id': case_id, 'case_result': case_result, 'comment': input_content}
+    def update_end_time_case_id(self, case_id, model_id, case_result, input_content=None, token=None):
+        data = {'case_id': case_id, 'model_id': model_id, 'case_result': case_result, 'comment': input_content}
         try:
             headers = {'x-access-tokens': token}
             response = requests.post(f'{self.base_url}/update_end_time', json=data, headers=headers, verify=False)
@@ -93,6 +93,7 @@ class HttpRequestManager:
             response = requests.get(f'{self.base_url}/get_cases_status/{sheet_id}/{model_id}', headers=headers, verify=False)
             response.raise_for_status()
             data = response.json()
+            logger.warning(data)
             return data
         except requests.RequestException as e:
             logger.error(f'HTTP GET request to /get_cases failed: {e}')

@@ -78,16 +78,17 @@ def token_required(f):
 def update_start_time(current_user):
     data = request.json
     case_id = data.get('case_id')
-    actions = data.get('actions')
-    logger.info(f"Updating start time for case_id: {case_id}, actions: {actions}")
-    if not case_id or not actions:
+    model_id = data.get('model_id')
+    start_time = data.get('start_time')
+    logger.info(f"Updating start time for case_id: {case_id}, model_id: {model_id}")
+    if not case_id or not model_id:
         return jsonify({'error': 'Missing required parameters'}), 400
 
     conn = get_db_connection()
     cursor = conn.cursor()
     try:
         manager = TestCaseManager(conn, cursor)
-        manager.update_start_time_by_case_id(case_id, actions)
+        manager.update_start_time_by_case_id(case_id, model_id, start_time)
         conn.commit()
         return jsonify({'message': 'Start time updated successfully.'}), 200
     except Exception as e:
@@ -104,16 +105,18 @@ def update_start_time(current_user):
 def update_end_time(current_user):
     data = request.json
     case_id = data.get('case_id')
+    model_id = data.get('model_id')
     case_result = data.get('case_result')
     comment = data.get('comment', None)
-    logger.info(f"Updating start time for case_id: {case_id}, actions: {case_result}, comment: {comment}")
+    logger.info(
+        f"Updating end time for case_id: {case_id}, model_id: {model_id}, actions: {case_result}, comment: {comment}")
     if not case_id or not case_result:
         return jsonify({'error': 'Missing required parameters'}), 400
     conn = get_db_connection()
     cursor = conn.cursor()
     try:
         manager = TestCaseManager(conn, cursor)
-        manager.update_end_time_case_id(case_id, case_result, comment)
+        manager.update_end_time_case_id(case_id, model_id, case_result, comment)
         conn.commit()
         return jsonify({'message': 'End time updated successfully.'}), 200
     except Exception as e:
@@ -194,40 +197,19 @@ def insert_case_by_power(current_user):
         conn.close()
 
 
-@app.route('/get_cases/<int:sheet_id>', methods=['GET'])
-def get_cases(sheet_id):
-    logger.info(f"Fetching cases for sheet_id: {sheet_id}")
-    conn = get_db_connection()
-    cursor = conn.cursor()
-    try:
-        manager = TestCaseManager(conn, cursor)
-        cases = manager.select_case_by_sheet_id(sheet_id)
-        formatted_cases = []
-        for case in cases:
-            case_list = list(case)
-            case_list[8] = case_list[8].strftime('%Y-%m-%d %H:%M:%S') if case_list[8] else None
-            case_list[9] = case_list[9].strftime('%Y-%m-%d %H:%M:%S') if case_list[9] else None
-            formatted_cases.append(case_list)
-
-        return jsonify({case[12]: case for case in formatted_cases}), 200
-    except Exception as e:
-        logger.error(f"An error occurred: {e}")
-        return jsonify({'error': str(e)}), 500
-    finally:
-        cursor.close()
-        conn.close()
-
-
 @app.route('/get_comments', methods=['POST'])
 def get_comments_for_case():
     data = request.json
-    case_ids = data.get('case_ids')
-    logger.info(f"Fetching cases for case_ids: {case_ids}")
+    execution_ids = data.get('execution_ids')
+    if not execution_ids:
+        return jsonify({'error': 'Missing required parameters'}), 400
+    logger.info(f"Fetching cases for execution_ids: {execution_ids}")
     conn = get_db_connection()
     cursor = conn.cursor()
     try:
         manager = TestCaseManager(conn, cursor)
-        comments = manager.select_all_comments(case_ids)
+        comments = manager.select_all_comments(execution_ids)
+        logger.info(comments)
         return jsonify({'comments': comments}), 200
     except Exception as e:
         logger.error(f"An error occurred: {e}")
@@ -372,14 +354,14 @@ def get_filename(filename):
         conn.close()
 
 
-@app.route('/get_plan_name_by_planname/<string:plan_name>', methods=['GET'])
-def get_plan_name_by_planname(plan_name):
-    logger.info(f"Fetching plan_name: {plan_name}")
+@app.route('/get_plan_name_by_planname/<string:plan_name>/<int:user_id>', methods=['GET'])
+def get_plan_name_by_planname(plan_name, user_id):
+    logger.info(f"Fetching plan_name: {plan_name}, userid: {user_id}")
     conn = get_db_connection()
     cursor = conn.cursor()
     try:
         manager = TestCaseManager(conn, cursor)
-        plan_exists = manager.select_plan_name_by_plan_name(plan_name)
+        plan_exists = manager.select_plan_name_by_plan_name(plan_name, user_id)
         return jsonify({'plan_exists': plan_exists}), 200
     except Exception as e:
         logger.error(f"An error occurred: {e}")
@@ -416,11 +398,29 @@ def get_cases_status(sheet_id, model_id):
         cases = manager.select_case_status(model_id, sheet_id)
         formatted_cases = []
         for case in cases:
-            case_list = list(case)
-            case_list[3] = case_list[3].strftime('%Y-%m-%d %H:%M:%S') if case_list[3] else None
-            case_list[4] = case_list[4].strftime('%Y-%m-%d %H:%M:%S') if case_list[4] else None
-            formatted_cases.append(case_list)
-        return jsonify({case[11]: case for case in formatted_cases}), 200
+            comment = case[4]
+            # 检查 comment 是否为 "N/A: No Comment"，如果是则替换为 None
+            if comment == "N/A: No Comment":
+                comment = None
+            case_dict = {
+                'TestResult': case[0],
+                'TestTime': case[1],
+                'StartTime': case[2].strftime('%Y-%m-%d %H:%M:%S') if case[2] else None,
+                'EndTime': case[3].strftime('%Y-%m-%d %H:%M:%S') if case[3] else None,
+                'Comment': comment,
+                'CaseTitle': case[5],
+                'PreConditions': case[6],
+                'CaseSteps': case[7],
+                'ExpectedResult': case[8],
+                'ExecutionID': case[9],
+                'ModelID': case[10],
+                'CaseID': case[11],
+                'SheetID': case[12],
+                'FailCount': case[13],
+                'BlockConut': case[14]
+            }
+            formatted_cases.append(case_dict)
+        return jsonify(formatted_cases), 200
     except Exception as e:
         logger.error(f"An error occurred: {e}")
         return jsonify({'error': str(e)}), 500
@@ -429,64 +429,51 @@ def get_cases_status(sheet_id, model_id):
         conn.close()
 
 
-@app.route('/update_test_num', methods=['POST'])
-@token_required
-def update_test_num(current_user):
-    data = request.json
-    case_id = data.get('case_id')
-    test_num = data.get('test_num')
+@app.route('/get_case_result', methods=['GET'])
+def get_case_result():
+    """
+    接口：根据 model_id 和 case_id 或 execution_id 获取用例结果。
+    """
+    # 获取请求参数
+    execution_id = request.args.get('execution_id', default=None, type=int)
+    model_id = request.args.get('model_id', default=None, type=int)
+    case_id = request.args.get('case_id', default=None, type=int)
 
-    logger.info(f"Updating test number for case_id: {case_id}")
+    # 日志记录
+    logger.info(
+        f"Fetching case result with parameters: execution_id={execution_id}, model_id={model_id}, case_id={case_id}")
 
-    if not case_id or not test_num:
-        return jsonify({'error': 'Missing required parameters'}), 400
-
+    # 数据库连接
     conn = get_db_connection()
     cursor = conn.cursor()
+
     try:
         manager = TestCaseManager(conn, cursor)
-        manager.update_test_num_by_id(test_num, case_id)
-        conn.commit()
-        return jsonify({'message': 'Test number updated successfully.'}), 200
-    except Exception as e:
-        conn.rollback()
-        logger.error(f"An error occurred: {e}")
-        return jsonify({'error': str(e)}), 500
-    finally:
-        cursor.close()
-        conn.close()
 
+        # 根据 execution_id 查询
+        if execution_id is not None:
+            logger.info(f"Fetching case result for execution_id: {execution_id}")
+            case_result = manager.select_case_result_by_execution_id(execution_id)
+        # 根据 model_id 和 case_id 查询
+        elif model_id is not None and case_id is not None:
+            logger.info(f"Fetching case result for model_id: {model_id}, case_id: {case_id}")
+            case_result = manager.select_case_result_by_id(model_id, case_id)
+        else:
+            # 参数不足，返回 400 错误
+            logger.warning("Invalid parameters: either execution_id or both model_id and case_id must be provided.")
+            return jsonify(
+                {'error': 'Invalid parameters. Provide either execution_id or both model_id and case_id.'}), 400
 
-@app.route('/get_test_num/<int:case_id>', methods=['GET'])
-def get_test_num(case_id):
-    logger.info(f"Fetching cases for case_id: {case_id}")
-    conn = get_db_connection()
-    cursor = conn.cursor()
-    try:
-        manager = TestCaseManager(conn, cursor)
-        test_num = manager.select_test_num_by_id(case_id)
-        return jsonify({'test_num': test_num}), 200
-    except Exception as e:
-        logger.error(f"An error occurred: {e}")
-        return jsonify({'error': str(e)}), 500
-    finally:
-        cursor.close()
-        conn.close()
-
-
-@app.route('/get_case_result/<int:case_id>', methods=['GET'])
-def get_case_result(case_id):
-    logger.info(f"Fetching cases for case_id: {case_id}")
-    conn = get_db_connection()
-    cursor = conn.cursor()
-    try:
-        manager = TestCaseManager(conn, cursor)
-        case_result = manager.select_case_result_by_id(case_id)
+        # 返回查询结果
         return jsonify({'case_result': case_result}), 200
+
     except Exception as e:
+        # 捕获异常并记录错误日志
         logger.error(f"An error occurred: {e}")
         return jsonify({'error': str(e)}), 500
+
     finally:
+        # 关闭数据库连接
         cursor.close()
         conn.close()
 
@@ -495,13 +482,15 @@ def get_case_result(case_id):
 @token_required
 def reset_case_result(current_user):
     data = request.json
-    case_id = data.get('case_id')
-    logger.info(f"Fetching cases for case_id: {case_id}")
+    execution_id = data.get('execution_id')
+    if not execution_id:
+        return jsonify({'error': 'Missing required parameters'}), 400
+    logger.info(f"Fetching cases for execution_id: {execution_id}")
     conn = get_db_connection()
     cursor = conn.cursor()
     try:
         manager = TestCaseManager(conn, cursor)
-        manager.reset_case_by_case_id(case_id)
+        manager.reset_case_by_execution_id(execution_id)
         conn.commit()
         return jsonify({'message': 'Test case reset successfully.'}), 200
     except Exception as e:
@@ -513,14 +502,21 @@ def reset_case_result(current_user):
         conn.close()
 
 
-@app.route('/calculate_progress_and_pass_rate/<int:sheet_id>', methods=['GET'])
-def calculate_progress_and_pass_rate(sheet_id):
-    logger.info(f"Fetching sheets for sheet_id: {sheet_id}")
+@app.route('/calculate_progress_and_pass_rate', methods=['GET'])
+def calculate_progress_and_pass_rate():
+    plan_id = request.args.get('planId')
+    model_id = request.args.get('modelId')
+    sheet_id = request.args.get('sheetId')
+    if not plan_id or not model_id or not sheet_id:
+        return jsonify({'error': 'Missing required parameters'}), 400
+    logger.info(f"Fetching plan for : {plan_id}")
+    logger.info(f"Fetching model for : {model_id}")
+    logger.info(f"Fetching sheets for : {sheet_id}")
     conn = get_db_connection()
     cursor = conn.cursor()
     try:
         manager = TestCaseManager(conn, cursor)
-        result = manager.calculate_progress_and_pass_rate(sheet_id)
+        result = manager.calculate_progress_and_pass_rate(plan_id, model_id, sheet_id)
         return jsonify({'result': result}), 200
     except Exception as e:
         logger.error(f"An error occurred: {e}")
@@ -547,38 +543,20 @@ def calculate_plan_statistics(plan_id):
         conn.close()
 
 
-@app.route('/get_start_time/<int:case_id>', methods=['GET'])
-def get_start_time(case_id):
-    logger.info(f"Fetching start_time for case_id: {case_id}")
+@app.route('/get_start_time/<int:model_id>/<int:case_id>', methods=['GET'])
+def get_start_time(model_id, case_id):
+    logger.info(f"Fetching start_time for model_id: {model_id}, case_id: {case_id}")
     conn = get_db_connection()
     cursor = conn.cursor()
     try:
         manager = TestCaseManager(conn, cursor)
-        start_time = manager.select_start_time(case_id)
+        logger.warning(f"传入 model_id: {model_id}, case_id: {case_id}")
+        start_time = manager.select_start_time(model_id, case_id)
         if start_time:
             # Convert datetime object to string
             start_time = start_time.strftime('%Y-%m-%d %H:%M:%S')
         logger.warning(start_time)
         return jsonify({'start_time': start_time}), 200
-    except Exception as e:
-        conn.rollback()
-        logger.error(f"An error occurred: {e}")
-        return jsonify({'error': str(e)}), 500
-    finally:
-        cursor.close()
-        conn.close()
-
-
-@app.route('/get_plan_id/<string:plan_name>', methods=['GET'])
-def get_plan_id(plan_name):
-    logger.info(f"Fetching plan_id for plan_name: {plan_name}")
-    conn = get_db_connection()
-    cursor = conn.cursor()
-    try:
-        manager = TestCaseManager(conn, cursor)
-        plan_id = manager.select_plan_id(plan_name)
-        conn.commit()
-        return jsonify({'plan_id': plan_id}), 200
     except Exception as e:
         conn.rollback()
         logger.error(f"An error occurred: {e}")
@@ -712,7 +690,7 @@ def get_case_actions_and_num(case_id):
         # 提取关键参数
         key_params = []
         for content in bracket_contents:
-            matches = re.match(r'(.+?)\+(\d+)', content)
+            matches = re.match(r'(.+?)\+(\d+(\.\d+)?)', content)
             if matches:
                 key_params.append((matches.group(1), matches.group(2)))
         logger.warning(key_params)
@@ -773,62 +751,159 @@ def generate_unique_filename(original_filename):
 @app.route('/upload-images', methods=['POST'])
 @token_required
 def upload_image(current_user):
-    # 从 request.files 获取文件对象列表
     image_files = request.files.getlist('image_files')
     case_id = request.form.get('case_id')
+    model_id = request.form.get('model_id')
+    case_result = request.form.get('case_result')
+    comment = request.form.get('comment', None)
 
-    if not case_id or not image_files:
-        return jsonify({'error': 'Case ID and image file are required'}), 400
+    if not case_id or not model_id or not case_result or not image_files:
+        return jsonify({'error': 'case_id, model_id, case_result and image files are required'}), 400
+
     conn = get_db_connection()
     cursor = conn.cursor()
     manager = TestCaseManager(conn, cursor)
-    uploaded_images = []
+
     try:
+        images_data = []
+
         for image_file in image_files:
             if not hasattr(image_file, 'read'):
                 logger.error("One of the image_files is not a file-like object")
                 continue
-            logger.info(image_file.filename)
-            # 确保文件名安全，并添加时间戳以确保唯一性
+
             original_filename = secure_filename(image_file.filename)
             timestamp = int(time.time())
-            unique_filename = f"{timestamp}_{image_file.filename}"
+            unique_filename = f"{timestamp}_{original_filename}"
 
-            # 创建存储路径
             today = datetime.datetime.now().strftime("%Y-%m-%d")
-            s3_key = f"{case_id}/{today}/{original_filename}"
+            s3_key = f"{case_id}/{today}/{unique_filename}"
 
-            # 获取文件大小和MIME类型
             mime_type = image_file.mimetype
             image_file.seek(0, os.SEEK_END)
             file_size = image_file.tell()
-            image_file.seek(0)  # 重置文件指针以供上传
+            image_file.seek(0)
 
             # 上传文件到S3
-            s3.upload_fileobj(
-                image_file,
-                BUCKET_NAME,
-                s3_key,
-                ExtraArgs={'ContentType': mime_type}
-            )
+            try:
+                s3.upload_fileobj(
+                    image_file,
+                    BUCKET_NAME,
+                    s3_key,
+                    ExtraArgs={'ContentType': mime_type}
+                )
+                logger.info(f"Uploaded file: {original_filename} to S3 with key: {s3_key}")
+            except Exception as e:
+                logger.error(f"Failed to upload to S3: {e}")
+                return jsonify({'error': 'Failed to upload to S3'}), 500
 
-            logger.info(f"Uploaded file: {original_filename} to S3 with key: {s3_key}")
+            # 准备图片数据
+            image_data = {
+                'original_file_name': original_filename,
+                'stored_file_name': unique_filename,
+                'file_path': s3_key,
+                'file_size': file_size,
+                'mime_type': mime_type
+            }
+            images_data.append(image_data)
 
-            # 将文件信息插入数据库
-            image_id = manager.upload_image_file(case_id, original_filename, unique_filename, s3_key, file_size,
-                                                 mime_type)
-            uploaded_images.append({'image_id': image_id, 's3_key': s3_key})
+        # 插入执行记录和所有图片信息
+        try:
+            execution_id = manager.insert_execution_with_image(case_id, model_id, case_result, images_data, comment)
+            conn.commit()
+            return jsonify({'execution_id': execution_id, 'uploaded_images': images_data}), 200
+        except Exception as e:
+            logger.error(f"Failed to insert execution and image records: {e}")
+            conn.rollback()
+            return jsonify({'error': 'Failed to insert execution and image records'}), 500
 
-        conn.commit()
-
-        return jsonify({'uploaded_images': uploaded_images}), 200
-    except Exception as e:
-        conn.rollback()
-        logger.error(f"An error occurred: {e}")
-        return jsonify({'error': str(e)}), 500
     finally:
         cursor.close()
         conn.close()
+
+
+@app.route('/get_execution_ids', methods=['POST'])
+@token_required
+def get_execution_ids(current_user):
+    data = request.json
+    case_ids = data.get('case_ids')
+    model_id = data.get('model_id')
+    logger.info(f"case_ids is {case_ids}, model_id is {model_id}")
+    if not case_ids or not model_id:
+        return jsonify({'error': 'case_ids, model_id are required'}), 400
+
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    manager = TestCaseManager(conn, cursor)
+    try:
+        execution_ids = manager.select_execution_ids(case_ids, model_id)
+        return jsonify({'execution_ids': execution_ids}), 200
+    except Exception as e:
+        logger.error(f"Failed to insert execution and image records: {e}")
+        return jsonify({'error': 'Failed to select executionids'}), 500
+
+
+@app.route('/get_images/<int:execution_id>', methods=['GET'])
+def get_images(execution_id):
+    if not execution_id:
+        return jsonify({'error': 'execution_id is required'}), 400
+
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    manager = TestCaseManager(conn, cursor)
+    try:
+        # 查询数据库获取图片信息
+        images = manager.select_images_by_execution_id(execution_id)
+        if not images:
+            return jsonify({'error': 'No images found for the given execution_id'}), 404
+
+        # 构建返回的图片信息列表，包括预签名 URL
+        images_data = []
+        for image in images:
+            file_path = image[3]
+            presigned_url = generate_presigned_url(file_path)
+
+            if not presigned_url:
+                logger.error(f"Failed to generate presigned URL for {file_path}")
+                continue
+
+            image_info = {
+                'original_file_name': image[2],
+                'stored_file_name': image[7],
+                'file_path': file_path,
+                'file_size': image[4],
+                'mime_type': image[5],
+                'time': image[6].strftime('%Y-%m-%d %H:%M:%S') if image[6] else None,
+                'url': presigned_url  # 添加预签名 URL
+            }
+            images_data.append(image_info)
+
+        logger.info(images_data)
+        return jsonify({'execution_id': execution_id, 'images': images_data}), 200
+
+    except Exception as e:
+        logger.error(f"Failed to retrieve images: {e}")
+        return jsonify({'error': 'Failed to retrieve images'}), 500
+
+    finally:
+        cursor.close()
+        conn.close()
+
+
+def generate_presigned_url(object_key, expiration=604800):  # 默认一周有效
+    try:
+        url = s3.generate_presigned_url('get_object',
+                                        Params={
+                                            'Bucket': BUCKET_NAME,
+                                            'Key': object_key,
+                                            'ResponseContentType': 'image/jpeg',  # 根据实际情况调整 MIME 类型
+                                            'ResponseContentDisposition': 'inline'  # 设置为 inline 以便浏览器预览
+                                        },
+                                        ExpiresIn=expiration)
+        return url
+    except Exception as e:
+        logger.error(f"Error generating presigned URL: {e}")
+        return None
 
 
 if __name__ == '__main__':

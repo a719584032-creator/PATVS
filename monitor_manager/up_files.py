@@ -260,7 +260,7 @@ def run_main(file_path, userid, token):
         data.active_sheet('Plan Information')
         plan_name = data.get_value_by_rc(1, 2)
         logger.info(f'plan_name is {plan_name}')
-        result = http_manager.get_params(f'/get_plan_name_by_planname/{plan_name}').get('plan_exists')
+        result = http_manager.get_params(f'/get_plan_name_by_planname/{plan_name}/{userid}').get('plan_exists')
         if result:
             raise ValueError(f"当前计划名: {result} 已存在，请勿重复上传")
         project_name = data.get_value_by_rc(1, 4)
@@ -286,11 +286,12 @@ def run_main(file_path, userid, token):
             http_manager.post_data('/insert_case', data=case_data, token=token)
     elif template == 'power':
         logger.info("电源模版")
-        data = read_test_cases_from_excel(file_path)
-        for sheet, cases in data.items():
-            case_data = {'filename': file_path, 'sheet_name': sheet, 'project_name': 'power-project',
-                         'tester': userid, 'workloading': '100(Min)', 'cases': cases}
-            http_manager.post_data('/insert_case_by_power', data=case_data, token=token)
+        raise logger.error("根据要求，必须使用 tdms 导出的测试计划模版！")
+        # data = read_test_cases_from_excel(file_path)
+        # for sheet, cases in data.items():
+        #     case_data = {'filename': file_path, 'sheet_name': sheet, 'project_name': 'power-project',
+        #                  'tester': userid, 'workloading': '100(Min)', 'cases': cases}
+        #     http_manager.post_data('/insert_case_by_power', data=case_data, token=token)
     else:
         logger.error(template)
         raise template

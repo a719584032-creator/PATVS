@@ -57,7 +57,7 @@ if os.path.exists(default_cfg_path):
     load_dotenv(dotenv_path=default_cfg_path, override=False)
 
 # 加载测试配置，覆盖系统的环境变量
-cfg_path = f'{Public.get_root_path()}/conf/.env'
+cfg_path = f'{Public.get_root_path()}/conf/test.env'
 if os.path.exists(cfg_path):
     load_dotenv(dotenv_path=cfg_path, override=True)
 env_config = EnvConfig()

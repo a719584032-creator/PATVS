@@ -812,7 +812,7 @@ class Patvs_Fuction():
             for action, test_num in self.remaining_actions:
                 if self.stop_event:
                     action = self.normalize_action(action)
-                    test_num = int(test_num)
+                    test_num = float(test_num)
                     # 在每个动作开始前更新临时文件
                     self.save_remaining_actions()
                     # 清除上一个动作的完成状态

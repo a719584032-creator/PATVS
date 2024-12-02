@@ -14,42 +14,88 @@ class TestCaseManager:
         self.conn = connection
         self.cursor = cursor
 
-    def update_start_time_by_case_id(self, case_id, actions):
-        self.cursor.execute("SELECT StartTime,TestResult FROM TestCase WHERE caseID = %s", (case_id,))
-        result = self.cursor.fetchall()
-        logger.info(result)
-        # 确保result的查询结果不是None并且 StartTime（result[0]）也位置None
-        if result and result[0][0] is not None and result[0][1] is None:
-            logger.info(f"已有执行记录时间 {result},仅修改监控动作和次数")
-            self.cursor.execute("UPDATE TestCase SET Actions = %s WHERE CaseID = %s",
-                                (actions, case_id))
-        else:
-            now = datetime.now()
-            formatted_now = now.strftime('%Y-%m-%d %H:%M:%S')
-            logger.info("开始记录执行时间，动作和次数")
-            logger.warning(formatted_now)
-            self.cursor.execute("UPDATE TestCase SET StartTime = %s, Actions = %s WHERE CaseID = %s",
-                                (formatted_now, actions, case_id))
-
-    def update_end_time_case_id(self, case_id, case_result, comment=None):
-        self.cursor.execute(f'SELECT StartTime FROM TestCase where CaseID = %s', (case_id,))
+    def update_start_time_by_case_id(self, case_id, model_id, start_time):
+        # 查询是否存在与 CaseID 和 ModelID 对应的 ExecutionID
+        self.cursor.execute(
+            """
+            SELECT ExecutionID FROM testexecution 
+            WHERE CaseID = %s AND ModelID = %s
+            """,
+            (case_id, model_id)
+        )
         result = self.cursor.fetchone()
 
+        if result:
+            # 如果存在 ExecutionID，则更新记录
+            execution_id = result[0]
+            self.cursor.execute(
+                """
+                UPDATE testexecution 
+                SET StartTime = %s 
+                WHERE ExecutionID = %s
+                """,
+                (start_time, execution_id)
+            )
+            logger.info(f"更新成功，ExecutionID: {execution_id}")
+        else:
+            # 如果不存在 ExecutionID，则插入新记录
+            self.cursor.execute(
+                """
+                INSERT INTO testexecution (StartTime, CaseID, ModelID) 
+                VALUES (%s, %s, %s)
+                """,
+                (start_time, case_id, model_id)
+            )
+            logger.info("插入成功")
+
+    def update_end_time_case_id(self, case_id, model_id, case_result, comment=None):
+        # 查询执行记录
+        result = self.select_start_time(model_id, case_id)
+        if result is None:
+            raise logger.error("未找到匹配的测试执行记录")
+
+        # 获取ExecutionID
+        self.cursor.execute(
+            "SELECT ExecutionID FROM testexecution WHERE CaseID = %s AND ModelID = %s",
+            (case_id, model_id)
+        )
+        execution_id = self.cursor.fetchone()
+        if execution_id is None:
+            raise logger.error("无法获取执行的 ExecutionID")
+
+        # 计算测试耗时
         now = datetime.now()
-        test_time = int((now - result[0]).total_seconds())
+        test_time = int((now - result).total_seconds())
         logger.info(f"测试消耗时间是 {test_time}")
         formatted_now = now.strftime('%Y-%m-%d %H:%M:%S')
+
+        # 开始事务
+        self.cursor.execute("BEGIN")
         # 更新测试结果
         self.cursor.execute(
-            "UPDATE TestCase SET EndTime = %s, TestTime = %s, TestResult = %s WHERE CaseID = %s",
-            (formatted_now, test_time, case_result, case_id)
+            "UPDATE testexecution SET EndTime = %s, TestTime = %s, TestResult = %s WHERE ExecutionID = %s",
+            (formatted_now, test_time, case_result, execution_id[0])
         )
         # 插入评论
         if comment:
             logger.warning("开始插入评论................................")
             self.cursor.execute(
-                "INSERT INTO TestCaseComments (CaseID, Comment, CommentTime) VALUES (%s, %s, %s)",
-                (case_id, comment, formatted_now)
+                "INSERT INTO TestCaseComments (ExecutionID, Comment, CommentTime) VALUES (%s, %s, %s)",
+                (execution_id[0], comment, formatted_now)
+            )
+            # 重新计算 FailCount
+            self.cursor.execute(
+                "SELECT Comment FROM TestCaseComments WHERE ExecutionID = %s",
+                (execution_id[0],)
+            )
+            comments = [row[0] for row in self.cursor.fetchall()]
+            fail_count = sum(c.count('Fail') for c in comments)
+            block_count = sum(c.count('Block') for c in comments)
+
+            # 更新 FailCount 字段
+            self.cursor.execute(
+                "UPDATE testexecution SET FailCount = %s, BlockCount = %s WHERE ExecutionID = %s",
+                (fail_count, block_count, execution_id[0])
             )
             logger.warning("插入结束................................")
 
@@ -62,25 +108,25 @@ class TestCaseManager:
         formatted_comments = "\n".join(f"{comment_time}: {comment}" for comment, comment_time in comments)
         return formatted_comments
 
-    def select_all_comments(self, case_ids):
+    def select_all_comments(self, execution_ids):
         # Fetch all comments for the provided list of case IDs
-        format_strings = ','.join(['%s'] * len(case_ids))
+        format_strings = ','.join(['%s'] * len(execution_ids))
         self.cursor.execute(
-            f"SELECT CaseID, Comment, CommentTime FROM TestCaseComments WHERE CaseID IN ({format_strings}) ORDER BY CommentTime ASC",
-            tuple(case_ids)
+            f"SELECT ExecutionID, Comment, CommentTime FROM TestCaseComments WHERE ExecutionID IN ({format_strings}) ORDER BY CommentTime ASC",
+            tuple(execution_ids)
         )
         comments_data = self.cursor.fetchall()
 
-        # Organize comments by CaseID
+        # Organize comments by ExecutionID
         comments_map = {}
-        for case_id, comment, comment_time in comments_data:
-            if case_id not in comments_map:
-                comments_map[case_id] = []
-            comments_map[case_id].append(f"{comment_time}: {comment}")
+        for execution_id, comment, comment_time in comments_data:
+            if execution_id not in comments_map:
+                comments_map[execution_id] = []
+            comments_map[execution_id].append(f"{comment_time}: {comment}")
 
         # Convert lists of comments to concatenated strings
-        for case_id in comments_map:
-            comments_map[case_id] = "\n".join(comments_map[case_id])
+        for execution_id in comments_map:
+            comments_map[execution_id] = "\n".join(comments_map[execution_id])
 
         return comments_map
 
@@ -89,7 +135,7 @@ class TestCaseManager:
         filename = os.path.basename(filename)  # 获取文件名
         try:
             # 查询是否已经存在相同的 plan_name
-            self.cursor.execute("SELECT id FROM TestPlan WHERE plan_name = %s", (plan_name,))
+            self.cursor.execute("SELECT id FROM TestPlan WHERE plan_name = %s AND userid = %s", (plan_name, userid))
             result = self.cursor.fetchone()
 
             if result:
@@ -199,19 +245,59 @@ class TestCaseManager:
         return all_case
 
     def select_all_project_names_by_username(self, userid):
-        query = "SELECT DISTINCT project_name FROM TestPlan WHERE userId = %s"
-        self.cursor.execute(query, (userid,))
+        """
+        根据用户身份返回项目列表：
+        - 如果用户是管理员 (role = admin)，则返回所有项目。
+        - 如果用户不是管理员，则根据 userId 返回对应的项目。
+        """
+        # 查询用户角色
+        role_query = "SELECT role FROM users WHERE userId = %s"
+        self.cursor.execute(role_query, (userid,))
+        role_result = self.cursor.fetchone()
+        # 如果用户是管理员，查询所有项目
+        if role_result and role_result[0] == 'admin':
+            logger.info(f"用户ID {userid} 的角色为 {role_result[0]}")
+            query = "SELECT DISTINCT project_name FROM TestPlan"
+            self.cursor.execute(query)
+        else:
+            # 如果用户不是管理员，根据 userId 查询项目
+            query = "SELECT DISTINCT project_name FROM TestPlan WHERE userId = %s"
+            self.cursor.execute(query, (userid,))
+
+        # 获取查询结果
         result = self.cursor.fetchall()
-        logger.info(result)
+        # 返回项目名称列表
         return [project_name[0] for project_name in result]
 
     def select_all_plan_names_by_project(self, userid, project_name):
-        query = """
-        SELECT id, plan_name FROM TestPlan WHERE userid = %s and project_name = %s
         """
-        self.cursor.execute(query, (userid, project_name))
+        根据用户身份返回计划列表：
+        - 如果用户是管理员 (role = admin)，则返回指定项目下的所有计划。
+        - 如果用户不是管理员，则根据 userId 和项目名称返回对应的计划。
+        """
+
+        # 查询用户角色
+        role_query = "SELECT role FROM users WHERE userId = %s"
+        self.cursor.execute(role_query, (userid,))
+        role_result = self.cursor.fetchone()
+
+        # 如果用户是管理员，查询指定项目下的所有计划
+        if role_result and role_result[0] == 'admin':
+            logger.info(f"用户ID {userid} 的角色为 {role_result[0]}")
+            query = """
+            SELECT id, plan_name FROM TestPlan WHERE project_name = %s
+            """
+            self.cursor.execute(query, (project_name,))
+        else:
+            # 如果用户不是管理员，根据 userId 和项目名称查询计划
+            query = """
+            SELECT id, plan_name FROM TestPlan WHERE userId = %s AND project_name = %s
+            """
+            self.cursor.execute(query, (userid, project_name))
+
+        # 获取查询结果
         result = self.cursor.fetchall()
-        logger.info(result)
+
         # 返回id和plan_names
         return result if result else []
 
@@ -241,27 +327,31 @@ class TestCaseManager:
     def select_case_status(self, model_id, sheet_id):
         query = """
         SELECT   
-        te.TestResult,
-        te.TestTime,
-        te.TestNum,
-        te.StartTime,
-        te.EndTime,
-        te.Comment,
-        tc.CaseTitle,
-        tc.PreConditions,
-        tc.CaseSteps,
-        tc.ExpectedResult,
-        tc.Actions,
-        tc.CaseID,
-        tc.sheet_id
+            te.TestResult,
+            te.TestTime,
+            te.StartTime,
+            te.EndTime,
+            GROUP_CONCAT(CONCAT(IFNULL(tcc.CommentTime, 'N/A'), ': ', IFNULL(tcc.Comment, 'No Comment')) ORDER BY tcc.CommentTime ASC SEPARATOR '\n') AS Comments,
+            tc.CaseTitle,
+            tc.PreConditions,
+            tc.CaseSteps,
+            tc.ExpectedResult,
+            te.ExecutionID,
+            te.ModelID,
+            tc.CaseID,
+            tc.sheet_id,
+            te.FailCount,
+            te.BlockCount
         FROM testcase tc
         LEFT JOIN testexecution te ON te.CaseID = tc.CaseID AND te.ModelID = %s
+        LEFT JOIN TestCaseComments tcc ON tcc.ExecutionID = te.ExecutionID
         WHERE tc.sheet_id = %s
+        GROUP BY tc.CaseID, tc.sheet_id
         """
+
         self.cursor.execute(query, (model_id, sheet_id))
         result = self.cursor.fetchall()
         logger.info(result)
-        # 返回所有
         return result
 
     def select_all_plan_names(self):
@@ -308,9 +398,9 @@ class TestCaseManager:
         logger.info(result)
         return result[0] if result else None
 
-    def select_plan_name_by_plan_name(self, plan_name):
-        query = "SELECT plan_name FROM TestPlan WHERE plan_name = %s"
-        self.cursor.execute(query, (plan_name,))
+    def select_plan_name_by_plan_name(self, plan_name, user_id):
+        query = "SELECT plan_name FROM TestPlan WHERE plan_name = %s AND userId = %s"
+        self.cursor.execute(query, (plan_name, user_id))
         result = self.cursor.fetchone()
         logger.info(result)
         return result[0] if result else None
@@ -339,29 +429,48 @@ class TestCaseManager:
         else:
             return None
 
-    def select_case_result_by_id(self, case_id):
+    def select_case_result_by_id(self, case_id, model_id):
         """
         获取测试结果
         """
-        self.cursor.execute('SELECT TestResult FROM TestCase WHERE CaseID = %s', (case_id,))
+        self.cursor.execute(
+            'SELECT TestResult FROM testexecution WHERE CaseID = %s AND ModelID = %s',
+            (case_id, model_id)
+        )
         result = self.cursor.fetchone()
-        return result if result[0] is not None else False
 
-    def reset_case_by_case_id(self, case_id):
+        if result:
+            logger.info(f"查询成功，TestResult: {result[0]}")
+            return result[0]  # 返回具体的 TestResult 值
+        else:
+            logger.info("未找到匹配的测试结果")
+            return None
+
+    def select_case_result_by_execution_id(self, execution_id):
+        self.cursor.execute(
+            'SELECT TestResult FROM testexecution WHERE ExecutionID = %s ', (execution_id,)
+        )
+        result = self.cursor.fetchone()
+
+        if result:
+            logger.info(f"查询成功，TestResult: {result[0]}")
+            return result[0]  # 返回具体的 TestResult 值
+        else:
+            logger.info("未找到匹配的测试结果")
+            return None
+
+    def reset_case_by_execution_id(self, execution_id):
         """
         重置用例状态
         """
         self.cursor.execute("""
-            UPDATE TestCase 
+            UPDATE testexecution 
             SET EndTime = NULL, 
                 TestTime = NULL, 
                 TestResult = NULL, 
-                comment = NULL, 
-                StartTime = NULL, 
-                Actions = NULL, 
-                TestNum = NULL
-            WHERE CaseID = %s
-        """, (case_id,))
+                StartTime = NULL
+            WHERE ExecutionID = %s
+        """, (execution_id,))
 
     def count_case_by_sheet_id(self, sheet_id):
         """
@@ -399,14 +508,19 @@ class TestCaseManager:
             logger.error(f"An error occurred: {e.args[0]}")
             return 0
 
-    def count_case_time_by_sheet_id(self, sheet_id):
+    def count_case_time_by_sheet_id(self, model_id, sheet_id):
         """
         统计总用例耗时
         :param sheet_id: 测试文件的sheet_id
         :return: 返回该测试文件中的总用例耗时
         """
         try:
-            self.cursor.execute("SELECT SUM(TestTime) FROM TestCase WHERE sheet_id=%s", (sheet_id,))
+            query = """
+            SELECT SUM(te.TestTime) FROM testexecution te JOIN TestCase tc 
+            ON te.CaseID = tc.CaseID 
+            WHERE tc.sheet_id=%s AND te.ModelID = %s
+            """
+            self.cursor.execute(query, (model_id, sheet_id))
             count_result = self.cursor.fetchone()
             if count_result and count_result[0] is not None:
                 # 使用math.ceil函数将秒转换为分钟，并向上取整
@@ -418,44 +532,60 @@ class TestCaseManager:
             logger.error(f"An error occurred: {e.args[0]}")
             return 0
 
-    def count_executed_case_by_sheet_id(self, sheet_id):
+    def count_executed_case_by_sheet_id(self, model_id, sheet_id):
         """
         统计已执行用例数
         :param sheet_id: 测试文件的sheet_id
         :return: 返回该测试文件中已执行的用例数
         """
+        query = """
+        SELECT COUNT(*) FROM testexecution te JOIN TestCase tc 
+        ON te.CaseID = tc.CaseID
+        WHERE tc.sheet_id = %s AND te.ModelID = %s AND te.TestResult IS NOT NULL
+        """
         try:
             # 统计已执行的用例数量
-            self.cursor.execute("SELECT COUNT(*) FROM TestCase WHERE sheet_id = %s AND TestResult IS NOT NULL",
-                                (sheet_id,))
+            self.cursor.execute(query, (model_id, sheet_id))
             executed_count = self.cursor.fetchone()
             return executed_count[0] if executed_count else 0
         except Exception as e:
             logger.error(f"An error occurred: {e}")
             return 0
 
-    def count_test_case_results_by_sheet_id(self, sheet_id):
+    def count_test_case_results_by_sheet_id(self, model_id, sheet_id):
         """
         统计通过、失败和阻塞的用例
+        :param model_id: 模型ID
         :param sheet_id: 测试文件的sheet_id
         :return: 返回该测试文件中已通过、失败和阻塞的用例数
         """
         try:
             query = """
-            SELECT 
-                SUM(CASE WHEN TestResult = 'Pass' THEN 1 ELSE 0 END) AS pass_count,
-                SUM(CASE WHEN TestResult = 'Fail' THEN 1 ELSE 0 END) AS fail_count,
-                SUM(CASE WHEN TestResult = 'Block' THEN 1 ELSE 0 END) AS block_count
-            FROM TestCase 
-            WHERE sheet_id = %s
+                    SELECT 
+                        SUM(CASE WHEN te.TestResult = 'Pass' THEN 1 ELSE 0 END) AS pass_count,
+                        SUM(CASE WHEN te.TestResult = 'Fail' THEN 1 ELSE 0 END) AS fail_count,
+                        SUM(CASE WHEN te.TestResult = 'Block' THEN 1 ELSE 0 END) AS block_count
+                    FROM testexecution te 
+                    JOIN TestCase tc ON te.CaseID = tc.CaseID 
+                    WHERE tc.sheet_id = %s AND te.ModelID = %s
             """
-            self.cursor.execute(query, (sheet_id,))
+            # 注意参数顺序
+            self.cursor.execute(query, (sheet_id, model_id))
             result = self.cursor.fetchone()
-            pass_count, fail_count, block_count = result if result else (0, 0, 0)
+
+            # 确保在结果为空时返回0
+            if result is None:
+                return {
+                    'pass_count': 0,
+                    'fail_count': 0,
+                    'block_count': 0
+                }
+
+            pass_count, fail_count, block_count = result
             return {
-                'pass_count': pass_count,
-                'fail_count': fail_count,
-                'block_count': block_count
+                'pass_count': pass_count if pass_count is not None else 0,
+                'fail_count': fail_count if fail_count is not None else 0,
+                'block_count': block_count if block_count is not None else 0
             }
         except Exception as e:
             logger.error(f"An error occurred: {e}")
@@ -465,25 +595,30 @@ class TestCaseManager:
                 'block_count': 0
             }
 
-    def calculate_progress_and_pass_rate(self, sheet_id):
+    def calculate_progress_and_pass_rate(self, plan_id, model_id, sheet_id):
         """
         计算测试用例的执行进度和通过率
         :return: 返回包含执行进度和通过率的字典
         """
         # 项目耗时
-        case_time_count = self.count_case_time_by_sheet_id(sheet_id)
+        case_time_count = self.count_case_time_by_sheet_id(model_id, sheet_id)
         # 理论耗时
         workloading_time = self.count_workloading_by_sheet_id(sheet_id)
         # 总用例数
         case_count = self.count_case_by_sheet_id(sheet_id)
         # 已执行用例数
-        executed_cases_count = self.count_executed_case_by_sheet_id(sheet_id)
+        executed_cases_count = self.count_executed_case_by_sheet_id(model_id, sheet_id)
         # 通过用例数
-        result_count = self.count_test_case_results_by_sheet_id(sheet_id)
-        # 项目名
-        project_name = self.select_project_name_by_id(sheet_id=sheet_id)
+        result_count = self.count_test_case_results_by_sheet_id(model_id, sheet_id)
+        # 测试环境
+        test_phase = self.select_test_phase(plan_id)
         # 测试人员
-        tester = self.select_tester_by_plan_or_sheet(sheet_id=sheet_id)
+        tester = self.select_tester_by_plan_or_sheet(plan_id=plan_id)
+        logger.warning(case_time_count)
+        logger.warning(workloading_time)
+        logger.warning(case_count)
+        logger.warning(executed_cases_count)
+        logger.warning(result_count)
 
         # 计算执行进度百分比
         def calculate_percentage(part, whole):
@@ -506,9 +641,8 @@ class TestCaseManager:
             "block_count": result_count['block_count'],
             "case_time_count": case_time_count,
             "workloading_time": workloading_time,
-            "project_name": project_name,
+            "project_phase": test_phase,
             "tester": tester
-
         })
         return {
             "case_count": case_count,
@@ -522,28 +656,38 @@ class TestCaseManager:
             "block_count": result_count['block_count'],
             "case_time_count": case_time_count,
             "workloading_time": workloading_time,
-            "project_name": project_name,
+            "project_phase": test_phase,
             "tester": tester
         }
 
     def count_case_time_by_plan_id(self, plan_id):
         """
         统计总用例耗时
-        :param plan_id: 测试计划的plan_id
-        :return: 返回该测试计划中的总用例耗时
+        :param plan_id: 测试计划的 plan_id
+        :return: 返回该测试计划中的总用例耗时（单位：分钟，向上取整）
         """
         try:
-            self.cursor.execute(
-                "SELECT SUM(TestTime) FROM TestCase WHERE sheet_id IN (SELECT id FROM TestSheet WHERE plan_id=%s)",
-                (plan_id,))
+            # 查询总耗时，关联 TestExecution 表、TestCase 表 和 TestSheet 表
+            query = """
+            SELECT SUM(te.TestTime)
+            FROM TestExecution te
+            INNER JOIN TestCase tc ON te.CaseID = tc.CaseID
+            INNER JOIN TestSheet ts ON tc.sheet_id = ts.id
+            WHERE ts.plan_id = %s
+            """
+            self.cursor.execute(query, (plan_id,))
             count_result = self.cursor.fetchone()
+
+            # 如果查询结果存在且不为空，计算总耗时（向上取整，以分钟为单位）
             if count_result and count_result[0] is not None:
                 total_time_in_min = math.ceil(count_result[0] / 60.0)
                 return total_time_in_min
             else:
+                # 如果查询结果为空或耗时为 None，返回 0
                 return 0
         except mysql.connector.Error as e:
-            logger.error(f"An error occurred: {e.args[0]}")
+            # 捕获数据库错误，记录日志并返回 0
+            logger.error(f"查询总用例耗时时发生错误: {e.args[0]}")
             return 0
 
     def count_workloading_by_plan_id(self, plan_id):
@@ -568,50 +712,89 @@ class TestCaseManager:
 
     def count_case_by_plan_id(self, plan_id):
         """
-        统计总用例数
-        :param plan_id: 测试计划的plan_id
-        :return: 返回该测试计划中的总用例数
+        统计总用例数（考虑关联的机型数量）
+        :param plan_id: 测试计划的 plan_id
+        :return: 返回该测试计划中的总用例数（用例数 * 关联的机型数）
         """
         try:
+            # 查询 plan_id 关联的机型数量
+            self.cursor.execute(
+                """
+                SELECT COUNT(DISTINCT ModelID) 
+                FROM testplanmodel 
+                WHERE PlanID = %s
+                """,
+                (plan_id,)
+            )
+            model_count_result = self.cursor.fetchone()
+            model_count = model_count_result[0] if model_count_result else 0
+
+            # 如果没有关联机型，直接返回 0
+            if model_count == 0:
+                return 0
+
+            # 查询原始用例数量
             self.cursor.execute(
                 "SELECT COUNT(*) FROM TestCase WHERE sheet_id IN (SELECT id FROM TestSheet WHERE plan_id=%s)",
-                (plan_id,))
-            case_count = self.cursor.fetchone()
-            return case_count[0] if case_count else 0
+                (plan_id,)
+                )
+            case_count_result = self.cursor.fetchone()
+            case_count = case_count_result[0] if case_count_result else 0
+
+            # 总用例数 = 原始用例数 * 关联机型数量
+            total_case_count = case_count * model_count
+            return total_case_count
         except Exception as e:
-            logger.error(f"An error occurred: {e}")
+            logger.error(f"统计总用例数时发生错误: {e}")
             return 0
 
     def count_executed_case_by_plan_id(self, plan_id):
         """
         统计已执行用例数
-        :param plan_id: 测试计划的plan_id
+        :param plan_id: 测试计划的 plan_id
         :return: 返回该测试计划中已执行的用例数
         """
         try:
-            self.cursor.execute(
-                "SELECT COUNT(*) FROM TestCase WHERE sheet_id IN (SELECT id FROM TestSheet WHERE plan_id=%s) AND TestResult IS NOT NULL",
-                (plan_id,))
+            # 查询已执行用例数，关联 TestExecution 表、TestCase 表 和 TestSheet 表
+            query = """
+            SELECT COUNT(te.CaseID)
+            FROM TestExecution te
+            INNER JOIN TestCase tc ON te.CaseID = tc.CaseID
+            INNER JOIN TestSheet ts ON tc.sheet_id = ts.id
+            WHERE ts.plan_id = %s AND te.TestResult IS NOT NULL
+            """
+            self.cursor.execute(query, (plan_id,))
             executed_count = self.cursor.fetchone()
+
+            # 如果查询结果存在且不为空，返回已执行用例数
             return executed_count[0] if executed_count else 0
         except Exception as e:
-            logger.error(f"An error occurred: {e}")
+            # 捕获异常，记录日志并返回 0
+            logger.error(f"统计已执行用例数时发生错误: {e}")
             return 0
 
     def count_test_case_results_by_plan_id(self, plan_id):
         """
         统计通过、失败和阻塞的用例
-        :param plan_id: 测试计划的plan_id
+        :param plan_id: 测试计划的 plan_id
         :return: 返回该测试计划中已通过、失败和阻塞的用例数
         """
         try:
             query = """
             SELECT 
-                SUM(CASE WHEN TestResult = 'Pass' THEN 1 ELSE 0 END) AS pass_count,
-                SUM(CASE WHEN TestResult = 'Fail' THEN 1 ELSE 0 END) AS fail_count,
-                SUM(CASE WHEN TestResult = 'Block' THEN 1 ELSE 0 END) AS block_count
-            FROM TestCase 
-            WHERE sheet_id IN (SELECT id FROM TestSheet WHERE plan_id = %s)
+                SUM(CASE WHEN te.TestResult = 'Pass' THEN 1 ELSE 0 END) AS pass_count,
+                SUM(CASE WHEN te.TestResult = 'Fail' THEN 1 ELSE 0 END) AS fail_count,
+                SUM(CASE WHEN te.TestResult = 'Block' THEN 1 ELSE 0 END) AS block_count
+            FROM testexecution te
+            WHERE te.CaseID IN (
+                SELECT tc.CaseID 
+                FROM TestCase tc
+                WHERE tc.sheet_id IN (
+                    SELECT ts.id 
+                    FROM TestSheet ts
+                    WHERE ts.plan_id = %s
+                )
+            )
             """
             self.cursor.execute(query, (plan_id,))
             result = self.cursor.fetchone()
@@ -629,13 +812,16 @@ class TestCaseManager:
                 'block_count': 0
             }
 
-    def select_project_name_by_id(self, sheet_id=None, plan_id=None):
-        if sheet_id:
-            self.cursor.execute('SELECT project_name FROM testsheet where id = %s', (sheet_id,))
-        else:
-            self.cursor.execute('SELECT DISTINCT project_name FROM testsheet where plan_id = %s', (plan_id,))
-        result = self.cursor.fetchall()
-        return [project_name[0] for project_name in result]
+    def select_project_name_by_id(self, sheet_id):
+        query = """
+        SELECT tp.project_name FROM testplan tp JOIN IN testsheet ts
+        ON tp.id = ts.plan_id 
+        WHERE ts.id = %s
+        """
+        self.cursor.execute(query, (sheet_id,))
+        result = self.cursor.fetchone()
+        logger.info(result)
+        return {'project_name': result[0]}
 
     def calculate_plan_statistics(self, plan_id):
         """
@@ -647,8 +833,12 @@ class TestCaseManager:
         case_count = self.count_case_by_plan_id(plan_id)
         executed_cases_count = self.count_executed_case_by_plan_id(plan_id)
         result_count = self.count_test_case_results_by_plan_id(plan_id)
-        project_name = self.select_project_name_by_id(plan_id=plan_id)
         tester = self.select_tester_by_plan_or_sheet(plan_id=plan_id)
+        logger.warning(case_time_count)
+        logger.warning(workloading_time)
+        logger.warning(case_count)
+        logger.warning(executed_cases_count)
+        logger.warning(result_count)
 
         # 计算执行进度百分比
         def calculate_percentage(part, whole):
@@ -671,7 +861,6 @@ class TestCaseManager:
             "block_count": result_count['block_count'],
             "case_time_count": case_time_count,
             "workloading_time": workloading_time,
-            "project_name": project_name,
             "tester": tester
         })
         return {
@@ -686,35 +875,48 @@ class TestCaseManager:
             "block_count": result_count['block_count'],
             "case_time_count": case_time_count,
             "workloading_time": workloading_time,
-            "project_name": project_name,
             "tester": tester
         }
 
-    def select_start_time(self, case_id):
-        self.cursor.execute("SELECT StartTime FROM TestCase WHERE CaseID = %s", (case_id,))
+    def select_start_time(self, model_id, case_id):
+        logger.info(f"接收 model_id: {model_id}, case_id: {case_id}")
+        self.cursor.execute(
+            "SELECT StartTime FROM testexecution WHERE ModelID = %s AND CaseID = %s",
+            (model_id, case_id)
+        )
         result = self.cursor.fetchone()
-        return result[0]
-        # if result[0] is None:
-        #     # 查询结果为空，获取当前时间
-        #     current_time = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-        #     self.cursor.execute("UPDATE TestCase SET StartTime = %s WHERE CaseID = %s", (current_time, case_id))
-        #     logger.warning(111111111111111111111111111)
-        #     logger.warning(current_time)
-        #     # 返回当前时间
-        #     return current_time
-        # else:
-        #     # 查询结果不为空，返回查询得到的时间
+        logger.warning(result)
+
+        if result:
+            logger.info(f"查询成功，StartTime: {result[0]}")
+            return result[0]  # 返回具体的 StartTime 值
+        else:
+            logger.warning("未找到匹配的执行记录")
+            return None
 
     def select_tester_by_plan_or_sheet(self, plan_id=None, sheet_id=None):
         if sheet_id:
-            query = "SELECT  tester FROM TestSheet WHERE id = %s"
+            # 暂时不删这个逻辑
+            query = "SELECT tester FROM TestSheet WHERE id = %s"
             self.cursor.execute(query, (sheet_id,))
         else:
-            query = "SELECT DISTINCT tester FROM TestSheet WHERE plan_id = %s"
+            query = """
+            SELECT DISTINCT u.username
+            FROM users u
+            JOIN testplan tp ON u.userId = tp.userId
+            WHERE tp.id = %s;
+            """
             self.cursor.execute(query, (plan_id,))
         result = self.cursor.fetchall()
         logger.info(result)
         return [tester[0] for tester in result]
+
+    def select_test_phase(self, plan_id):
+        query = "SELECT project_phase FROM testplan WHERE id = %s"
+        self.cursor.execute(query, (plan_id,))
+        result = self.cursor.fetchone()
+        logger.info(result)
+        return result[0]
 
     def select_plan_id(self, plan):
         self.cursor.execute('SELECT id FROM TestPlan WHERE plan_name = %s', (plan,))
@@ -790,16 +992,103 @@ class TestCaseManager:
             params.append(plan_id)
         self.cursor.execute(update_query, params)
 
-    def upload_image_file(self, case_id, original_filename, stored_filename, s3_key, file_size, mime_type):
+    def upload_image_file(self, execution_id, original_filename, stored_filename, s3_key, file_size, mime_type):
         # 执行插入操作
         self.cursor.execute(
             """
-            INSERT INTO testcase_image (CaseID, OriginalFileName, StoredFileName, FilePath, FileSize, MimeType, UploadDate)
+            INSERT INTO testcase_image (ExecutionID, OriginalFileName, StoredFileName, FilePath, FileSize, MimeType, UploadDate)
             VALUES (%s, %s, %s, %s, %s, %s, %s)
             """,
-            (case_id, original_filename, stored_filename, s3_key, file_size, mime_type, datetime.now()))
+            (execution_id, original_filename, stored_filename, s3_key, file_size, mime_type, datetime.now()))
 
         # 获取最后插入的ID
         self.cursor.execute("SELECT LAST_INSERT_ID()")
         image_id = self.cursor.fetchone()[0]
         return image_id
+
+    def insert_execution_with_image(self, case_id, model_id, case_result, images_data, comment=None):
+        # 查询执行记录
+        result = self.select_start_time(model_id, case_id)
+        if result is None:
+            raise logger.error("未找到匹配的测试执行记录")
+
+        # 获取ExecutionID
+        self.cursor.execute(
+            "SELECT ExecutionID FROM testexecution WHERE CaseID = %s AND ModelID = %s",
+            (case_id, model_id)
+        )
+        execution_id = self.cursor.fetchone()
+        if execution_id is None:
+            raise logger.error("无法获取执行的 ExecutionID")
+
+        # 计算测试耗时
+        now = datetime.now()
+        test_time = int((now - result).total_seconds())
+        logger.info(f"测试消耗时间是 {test_time}")
+        formatted_now = now.strftime('%Y-%m-%d %H:%M:%S')
+
+        # 开始事务
+        self.cursor.execute("BEGIN")
+        # 更新测试结果
+        self.cursor.execute(
+            "UPDATE testexecution SET EndTime = %s, TestTime = %s, TestResult = %s WHERE ExecutionID = %s",
+            (formatted_now, test_time, case_result, execution_id[0])
+        )
+        # 插入评论
+        if comment:
+            logger.warning("开始插入评论................................")
+            self.cursor.execute(
+                "INSERT INTO TestCaseComments (ExecutionID, Comment, CommentTime) VALUES (%s, %s, %s)",
+                (execution_id[0], comment, formatted_now)
+            )
+            # 重新计算 FailCount
+            self.cursor.execute(
+                "SELECT Comment FROM TestCaseComments WHERE ExecutionID = %s",
+                (execution_id[0],)
+            )
+            comments = [row[0] for row in self.cursor.fetchall()]
+            logger.warning(comments)
+            fail_count = sum(c.count('Fail') for c in comments)
+            block_count = sum(c.count('Block') for c in comments)
+
+            # 更新 FailCount 字段
+            self.cursor.execute(
+                "UPDATE testexecution SET FailCount = %s, BlockCount = %s WHERE ExecutionID = %s",
+                (fail_count, block_count, execution_id[0])
+            )
+            logger.warning("插入结束................................")
+        # 插入 testcase_image 表
+        for image_data in images_data:
+            self.cursor.execute(
+                "INSERT INTO testcase_image (ExecutionID, OriginalFileName, StoredFileName, FilePath, FileSize, MimeType, UploadDate) VALUES (%s, %s, %s, %s, %s, %s, %s)",
+                (execution_id[0], image_data['original_file_name'], image_data['stored_file_name'],
+                 image_data['file_path'], image_data['file_size'], image_data['mime_type'], formatted_now)
+            )
+        logger.info(f"插入成功，ExecutionID: {execution_id[0]}")
+
+        return execution_id[0]
+
+    def select_execution_ids(self, case_ids, model_id):
+        # 创建占位符字符串
+        placeholders = ', '.join(['%s'] * len(case_ids))
+
+        query = f"""
+        SELECT ExecutionID
+        FROM testexecution
+        WHERE CaseID IN ({placeholders}) AND ModelID = %s
+        """
+
+        # 将 case_ids 展开为参数列表
+        self.cursor.execute(query, (*case_ids, model_id))
+        execution_ids = self.cursor.fetchall()
+        logger.info(execution_ids)
+        return [execution_id[0] for execution_id in execution_ids]
+
+    def select_images_by_execution_id(self, execution_id):
+        query = """
+        SELECT * FROM testcase_image WHERE ExecutionID = %s
+        """
+        self.cursor.execute(query, (execution_id,))
+        images = self.cursor.fetchall()
+        logger.warning(images)
+        return images

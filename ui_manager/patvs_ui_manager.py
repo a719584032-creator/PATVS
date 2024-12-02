@@ -25,6 +25,7 @@ import qrcode
 from io import BytesIO
 from PIL import Image
 import wx.lib.newevent
+import webbrowser
 
 
 def resource_path(relative_path):
@@ -33,19 +34,42 @@ def resource_path(relative_path):
     return os.path.join(base_path, relative_path)
 
 
-class ResetButtonRenderer(wx.grid.GridCellRenderer):
-    def __init__(self):
-        wx.grid.GridCellRenderer.__init__(self)
+class ButtonRenderer(wx.grid.GridCellRenderer):
+    """自定义按钮渲染器，仅显示蓝色字体"""
+
+    def __init__(self, label="按钮"):
+        super().__init__()
+        self.label = label  # 按钮上的文字
 
     def Draw(self, grid, attr, dc, rect, row, col, isSelected):
-        button_text = "重置"
-        dc.SetBrush(wx.Brush("white"))
-        dc.SetPen(wx.TRANSPARENT_PEN)
-        dc.DrawRectangle(rect)
-        tw, th = dc.GetTextExtent(button_text)
-        # 保持水平垂直居中
-        dc.SetTextForeground(wx.BLUE)
-        dc.DrawText(button_text, rect.x + rect.width // 2 - tw // 2, rect.y + rect.height // 2 - th // 2)
+        """绘制蓝色字体"""
+        # 清除背景
+        dc.SetBrush(wx.Brush(wx.Colour(255, 255, 255)))  # 白色背景
+        dc.SetPen(wx.TRANSPARENT_PEN)  # 无边框
+        dc.DrawRectangle(rect.x, rect.y, rect.width, rect.height)
+
+        # 设置字体颜色为蓝色
+        dc.SetTextForeground(wx.Colour(0, 0, 255))  # 蓝色字体
+        font = dc.GetFont()
+        font.SetWeight(wx.FONTWEIGHT_BOLD)  # 粗体文字
+        dc.SetFont(font)
+
+        # 绘制文字
+        text_width, text_height = dc.GetTextExtent(self.label)
+        text_x = rect.x + (rect.width - text_width) // 2
+        text_y = rect.y + (rect.height - text_height) // 2
+        dc.DrawText(self.label, text_x, text_y)
+
+    def GetBestSize(self, grid, attr, dc, row, col):
+        """返回按钮的最佳尺寸"""
+        dc.SetFont(grid.GetFont())
+        text_width, text_height = dc.GetTextExtent(self.label)
+        # 返回文本的宽度和高度，并添加适当的边距
+        return wx.Size(text_width + 10, text_height + 10)
+
+    def Clone(self):
+        """克隆渲染器实例"""
+        return ButtonRenderer(self.label)
 
 
 class TestCasesPanel(wx.Panel):
@@ -105,21 +129,25 @@ class TestCasesPanel(wx.Panel):
         self.annex_button.Bind(wx.EVT_BUTTON, self.permutation_and_combination)
 
         # 用例筛选下拉框
-        # 添加新的下拉框用于显示 sheet_name
-        self.project_name_combo = wx.ComboBox(self, choices=http_manager.get_params(f'/get_project_names/{self.userid}').get('project_names'))
+        # 固定宽度
+        fixed_width = 200
+        self.project_name_combo = wx.ComboBox(self)
+        self.project_name_combo.SetMinSize(wx.Size(150, -1))
         self.project_name_combo.Bind(wx.EVT_COMBOBOX, self.on_project_select)
-        self.project_name_combo.Bind(wx.EVT_MOTION, self.on_project_hover)
+        self.project_name_combo.Bind(wx.EVT_MOTION, self.on_project_hover) # 鼠标悬停时动态加载数据
 
         self.plan_name_combo = wx.ComboBox(self)
+        self.plan_name_combo.SetMinSize(wx.Size(fixed_width, -1))
         self.plan_name_combo.Bind(wx.EVT_COMBOBOX, self.on_plan_select)
         self.plan_name_combo.Bind(wx.EVT_MOTION, self.on_plan_hover)
 
         self.model_name_combo = wx.ComboBox(self)
+        self.model_name_combo.SetMinSize(wx.Size(fixed_width, -1))
         self.model_name_combo.Bind(wx.EVT_COMBOBOX, self.on_model_select)
         self.model_name_combo.Bind(wx.EVT_MOTION, self.on_model_hover)
 
-        # 添加新的下拉框用于显示 sheet_name
         self.sheet_name_combo = wx.ComboBox(self)
+        self.sheet_name_combo.SetMinSize(wx.Size(fixed_width, -1))
         self.sheet_name_combo.Bind(wx.EVT_COMBOBOX, self.on_sheet_select)
         self.sheet_name_combo.Bind(wx.EVT_MOTION, self.on_sheet_hover)
 
@@ -138,35 +166,35 @@ class TestCasesPanel(wx.Panel):
         buttonSizer.Add(self.annex_button, 0, wx.ALL, 5)
 
         self.testerLabel = wx.StaticText(self, label=f"测试人员: {username}")
-        labelSizer.Add(self.testerLabel, 0, wx.ALL, 5)
+        labelSizer.Add(self.testerLabel, 0, wx.ALL, 8)
 
         self.test_phaseLabel = wx.StaticText(self, label=f"测试阶段: N/A")
-        labelSizer.Add(self.test_phaseLabel, 0, wx.ALL, 5)
+        labelSizer.Add(self.test_phaseLabel, 0, wx.ALL, 8)
 
         # 添加统计的标签（初始为空）
         self.case_time_total = wx.StaticText(self, label="总耗时: N/A")
         #   self.case_time_total.SetFont(font)
-        labelSizer.Add(self.case_time_total, 0, wx.ALIGN_CENTER | wx.ALL, 5)
+        labelSizer.Add(self.case_time_total, 0, wx.ALL, 8)
 
         self.case_total = wx.StaticText(self, label="用例总数: N/A")
         #    self.case_total.SetFont(font)
-        labelSizer.Add(self.case_total, 0, wx.ALIGN_CENTER | wx.ALL, 5)
+        labelSizer.Add(self.case_total, 0, wx.ALIGN_CENTER | wx.ALL, 8)
 
         self.executed_cases = wx.StaticText(self, label="已执行用例: N/A")
         #  self.executed_cases.SetFont(font)
-        labelSizer.Add(self.executed_cases, 0, wx.ALIGN_CENTER | wx.ALL, 5)
+        labelSizer.Add(self.executed_cases, 0, wx.ALIGN_CENTER | wx.ALL, 8)
 
         self.pass_count = wx.StaticText(self, label="Pass: N/A")
         #    self.pass_count.SetFont(font)
-        labelSizer.Add(self.pass_count, 0, wx.ALIGN_CENTER | wx.ALL, 5)
+        labelSizer.Add(self.pass_count, 0, wx.ALIGN_CENTER | wx.ALL, 8)
 
         self.fail_count = wx.StaticText(self, label="Fail: N/A")
         #   self.fail_count.SetFont(font)
-        labelSizer.Add(self.fail_count, 0, wx.ALIGN_CENTER | wx.ALL, 5)
+        labelSizer.Add(self.fail_count, 0, wx.ALIGN_CENTER | wx.ALL, 8)
 
         self.block_count = wx.StaticText(self, label="Block: N/A")
         #  self.block_count.SetFont(font)
-        labelSizer.Add(self.block_count, 0, wx.ALIGN_CENTER | wx.ALL, 5)
+        labelSizer.Add(self.block_count, 0, wx.ALIGN_CENTER | wx.ALL, 8)
 
         # 创建主布局
         mainSizer = wx.BoxSizer(wx.VERTICAL)
@@ -177,7 +205,7 @@ class TestCasesPanel(wx.Panel):
 
         # 单独创建一个水平盒子来放置 case_search_combo 下拉框
         caseSearchSizer = wx.BoxSizer(wx.HORIZONTAL)
-        self.projectLabel = wx.StaticText(self, label=f"项目")
+        self.projectLabel = wx.StaticText(self, label="项目")
         caseSearchSizer.Add(self.projectLabel, 0, wx.ALL, 5)
         caseSearchSizer.Add(self.project_name_combo, 0, wx.ALL, 5)
 
@@ -286,6 +314,7 @@ class TestCasesPanel(wx.Panel):
             self.plan_name_combo.Append(plan_name, plan_id)
 
         # 清空 sheet_name_combo，因为项目改变可能导致计划和用例表的变化
+        self.model_name_combo.Clear()
         self.sheet_name_combo.Clear()
         self.tree.Hide()  # 隐藏用例树
         self.clear_statistics()  # 清空统计信息
@@ -304,6 +333,7 @@ class TestCasesPanel(wx.Panel):
 
         # 清空并重新填充 model_name_combo
         self.model_name_combo.Clear()
+        self.sheet_name_combo.Clear()
         for model_id, model_name in model_names_with_ids:
             self.model_name_combo.Append(model_name, model_id)
         self.tree.Hide()  # 选择计划后先隐藏用例树，等待选择用例表后再显示
@@ -342,12 +372,33 @@ class TestCasesPanel(wx.Panel):
             self.update_statistics()
             self.CaseID = None
 
-    # 绑定鼠标悬停事件的处理函数
     def on_project_hover(self, event):
-        # 获取当前选择的内容
-        selection = self.project_name_combo.GetStringSelection()
-        if selection:
-            self.project_name_combo.SetToolTip(selection)
+        """
+        当鼠标悬停在项目下拉框时，动态加载项目数据，同时保留当前选中的项目
+        """
+        logger.info("开始动态加载项目数据")
+        try:
+            # 获取当前选中的项目名称
+            current_selection = self.project_name_combo.GetValue()
+
+            # 调用接口获取最新的项目名称列表
+            project_names = http_manager.get_params(f'/get_project_names/{self.userid}').get('project_names', [])
+
+            # 清空并重新填充 project_name_combo
+            self.project_name_combo.Clear()
+            for project_name in project_names:
+                self.project_name_combo.Append(project_name)
+
+            # 如果之前有选中的项目，尝试重新设置选中状态
+            if current_selection in project_names:
+                self.project_name_combo.SetValue(current_selection)
+            else:
+                # 如果当前选中的项目不在最新列表中，清空选中状态
+                self.project_name_combo.SetValue("")
+
+            logger.info("项目数据加载完成")
+        except Exception as e:
+            logger.error(f"加载项目数据失败: {e}")
         event.Skip()
 
     def on_plan_hover(self, event):
@@ -373,6 +424,7 @@ class TestCasesPanel(wx.Panel):
 
     def clear_statistics(self):
         # 清空统计信息
+        self.test_phaseLabel.SetLabel("测试阶段: N/A")
         self.case_time_total.SetLabel("总耗时: N/A")
         self.case_total.SetLabel("用例总数: N/A")
         self.executed_cases.SetLabel("已执行用例: N/A")
@@ -383,8 +435,10 @@ class TestCasesPanel(wx.Panel):
     def update_statistics(self):
         # 更新统计信息
         if self.sheet_id:
-            data = http_manager.get_params(f'/calculate_progress_and_pass_rate/{self.sheet_id}')
+            pamars = {'planId': self.plan_id, 'modelId': self.model_id, 'sheetId': self.sheet_id}
+            data = http_manager.get_params(f'/calculate_progress_and_pass_rate', params=pamars)
             result = data.get('result')
+            self.test_phaseLabel.SetLabel(f"测试阶段: {result['project_phase']}")
             self.case_time_total.SetLabel(f"总耗时: {result['case_time_count']}(Min)")
             self.case_total.SetLabel(f"用例总数: {result['case_count']}")
             self.executed_cases.SetLabel(f"已执行用例: {result['executed_cases_count']}")
@@ -392,25 +446,14 @@ class TestCasesPanel(wx.Panel):
             self.fail_count.SetLabel(f"Fail: {result['fail_count']}")
             self.block_count.SetLabel(f"Block: {result['block_count']}")
 
-    def show_message_box(self, message, total):
-        dlg = wx.MessageDialog(self, message, "测试进度", wx.YES_NO | wx.ICON_QUESTION)
-        result = dlg.ShowModal()
-        dlg.Destroy()
-        if result == wx.ID_YES:
-            self.timer = wx.Timer(self)
-            self.Bind(wx.EVT_TIMER, self.on_timer)
-            self.timer.Start(500)  # 0.5秒后触发定时器事件
-        else:
-            wx.CallAfter(self.add_log_message, "测试终止，请填写 block 原因。")
-
-    def on_timer(self, event):
-        self.timer.Stop()
-        self.GetParent().Close()
-
     def save_state(self):
         state = {
             'username': self.username,
+            'test_project': self.project_name_combo.GetValue() if self.project_name_combo.GetValue() else None,
             'test_plan': self.plan_name_combo.GetValue() if self.plan_name_combo.GetValue() else None,
+            'plan_id': self.plan_id,
+            'test_model': self.model_name_combo.GetValue() if self.model_name_combo.GetValue() else None,
+            'model_id': self.model_id,
             'test_sheet': self.sheet_name_combo.GetValue() if self.sheet_name_combo.GetValue() else None,
             'sheet_id': self.sheet_id,
             'test_case_id': self.tree.GetItemData(
@@ -427,13 +470,26 @@ class TestCasesPanel(wx.Panel):
                 state = json.load(state_file)
                 # 防止 username 篡改数据
                 if state['username'] == self.username:
+                    if 'test_project' in state and state['test_project']:
+                        self.project_name_combo.SetValue(state['test_project'])
+                        self.on_project_select(None)
                     if 'test_plan' in state and state['test_plan']:
                         self.plan_name_combo.SetValue(state['test_plan'])
+                        self.plan_id = state.get('plan_id', None)
                         self.on_plan_select(None)
+                    if 'test_model' in state and state['test_model']:
+                        self.model_name_combo.SetValue(state['test_model'])
+                        self.model_id = state.get('model_id', None)
+                        self.model_name = state.get('test_model', None)
+                        self.on_model_select(None)
                     if 'test_sheet' in state and state['test_sheet']:
+                        # self.sheet_name_combo.SetValue(state['test_sheet'])
+                        # self.sheet_id = state.get('sheet_id', None)
+                        # self.sheet_name = state.get('test_sheet', None)
+                        # self.on_sheet_select(None)
                         sheet_name = state['test_sheet']
                         sheet_id = state.get('sheet_id', None)
-                        sheet_names_with_ids = http_manager.get_sheet_names(state['test_plan'], self.username)
+                        sheet_names_with_ids = http_manager.get_sheet_names(self.plan_id)
 
                         # 清空并重新填充 sheet_name_combo
                         self.sheet_name_combo.Clear()
@@ -487,7 +543,7 @@ class TestCasesPanel(wx.Panel):
             self.log_content.AppendText(message + '\n')  # 在文本控件的末尾添加文本
             logger.debug(message + '\n')
 
-    def upload_image(self):
+    def upload_image(self, case_result, comment=None):
         # 创建文件选择对话框
         with wx.FileDialog(self, "选择图片文件",
                            wildcard="JPEG files (*.jpg;*.jpeg)|*.jpg;*.jpeg|PNG files (*.png)|*.png",
@@ -504,20 +560,20 @@ class TestCasesPanel(wx.Panel):
                 return False
             try:
                 # 上传文件
-                self.upload_files_to_server(pathnames)
+                self.upload_files_to_server(pathnames, case_result, comment)
                 return True
             except Exception as e:
                 wx.LogError(f"无法打开文件. 错误信息: {e}")
                 return False
 
-    def upload_files_to_server(self, file_paths):
+    def upload_files_to_server(self, file_paths, case_result, comment=None):
         files = []
         for file_path in file_paths:
             # 打开文件并保持打开状态，直到上传完成
             file = open(file_path, 'rb')
             files.append(('image_files', (os.path.basename(file_path), file, 'multipart/form-data')))
 
-        data = {'case_id': self.CaseID}
+        data = {'case_id': self.CaseID, 'model_id': self.model_id, 'case_result': case_result, 'comment': comment}
         logger.warning(files)
         try:
             response = http_manager.post_file('/upload-images', files=files, data=data, token=self.token)
@@ -530,56 +586,21 @@ class TestCasesPanel(wx.Panel):
             for _, (filename, file, _) in files:
                 file.close()
 
-    def generate_qr_code(self, upload_url):
-        qr = qrcode.QRCode(
-            version=1,
-            error_correction=qrcode.constants.ERROR_CORRECT_L,
-            box_size=10,
-            border=4,
-        )
-        qr.add_data(upload_url)
-        qr.make(fit=True)
-
-        img = qr.make_image(fill_color="black", back_color="white")
-        return img
-
-    def show_qr_code(self, img):
-        buffer = BytesIO()
-        img.save(buffer, format="PNG")
-        buffer.seek(0)
-
-        qr_image = wx.Image(buffer, wx.BITMAP_TYPE_PNG)
-        qr_bitmap = wx.Bitmap(qr_image)
-
-        dialog = wx.Dialog(self, title="扫描二维码上传图片")
-        sizer = wx.BoxSizer(wx.VERTICAL)
-        qr_control = wx.StaticBitmap(dialog, -1, qr_bitmap)
-        sizer.Add(qr_control, 0, wx.ALL, 10)
-        dialog.SetSizer(sizer)
-        dialog.Fit()
-        dialog.ShowModal()
-        dialog.Destroy()
-
     def test_result(self, event):
-
         clicked_button = event.GetEventObject()
         case_result = clicked_button.GetLabel()
+        action_and_num = http_manager.get_params(f'/get_case_actions_and_num/{self.CaseID}').get('actions_and_num')
         if clicked_button is self.result_buttons['Pass']:
             # 处理 pass
             logger.info(f"Pass Button clicked {self.CaseID}")
-            action_and_num = http_manager.get_params(f'/get_case_actions_and_num/{self.CaseID}').get('actions_and_num')
             if len(action_and_num) == 1 and '时间' in action_and_num[0]:
-                # # 生成上传图片的URL， 扫码上传需要能连接公司网络。
-                # upload_url = f"http://yourserver.com/upload-image?case_id={self.CaseID}&token={self.token}"
-                # img = self.generate_qr_code(upload_url)
-                # self.show_qr_code(img)
-                # return
-                # 强制用户上传图片
-                image_uploaded = self.upload_image()
+                # 主观测试强制用户上传图片
+                image_uploaded = self.upload_image(case_result)
                 if not image_uploaded:
                     wx.MessageBox('上传图片是必填操作，请上传图片后再继续。', '提示', wx.OK | wx.ICON_WARNING)
                     return  # 如果用户没有上传图片，则返回，阻止后续操作
-            http_manager.update_end_time_case_id(self.CaseID, 'Pass', token=self.token)
+            else:
+                http_manager.update_end_time_case_id(self.CaseID, self.model_id, case_result, token=self.token)
             wx.CallAfter(self.case_enable)
             wx.CallAfter(self.refresh_node_case_status, case_status=case_result)
             wx.CallAfter(self.update_statistics)
@@ -590,8 +611,17 @@ class TestCasesPanel(wx.Panel):
             if dlg.ShowModal() == wx.ID_OK:
                 input_content = dlg.GetValue().strip()  # 获取输入的内容
                 if input_content:
+                    if len(action_and_num) == 1 and '时间' in action_and_num[0]:
+                        # 主观测试强制用户上传图片
+                        image_uploaded = self.upload_image(case_result, f'Fail: {input_content}')
+                        if not image_uploaded:
+                            wx.MessageBox('上传图片是必填操作，请上传图片后再继续。', '提示', wx.OK | wx.ICON_WARNING)
+                            return  # 如果用户没有上传图片，则返回，阻止后续操作
+                    else:
+                        http_manager.update_end_time_case_id(self.CaseID, self.model_id, case_result,
+                                                             f'Fail: {input_content}', self.token)
                     logger.info(f"Fail Button clicked, Content: {input_content}")
-                    http_manager.update_end_time_case_id(self.CaseID, case_result, f'Fail: {input_content}', self.token)
+
                     # 设置事件以通知监控线程停止
                     self.patvs_monitor.stop_event = False
                     # 当用例为 block 时，需要主动去停止 messageLoop 的循环
@@ -619,7 +649,8 @@ class TestCasesPanel(wx.Panel):
                 input_content = dlg.GetValue().strip()  # 获取输入的内容
                 if input_content:
                     logger.info(f"Block Button clicked, Content: {input_content}")
-                    http_manager.update_end_time_case_id(self.CaseID, case_result, f'Block: {input_content}',
+                    http_manager.update_end_time_case_id(self.CaseID, self.model_id, case_result,
+                                                         f'Block: {input_content}',
                                                          self.token)
                     # 设置事件以通知监控线程停止
                     self.patvs_monitor.stop_event = False
@@ -654,16 +685,23 @@ class TestCasesPanel(wx.Panel):
             if not action_and_num:
                 wx.MessageBox('未检测到任何匹配项，请按照规则修改用例标题后再测试', 'Warning')
                 return
-            result = http_manager.get_params(f'/get_case_result/{self.CaseID}')
+            params = {"case_id": self.CaseID, "model_id": self.model_id}
+            result = http_manager.get_params(f'/get_case_result', params=params)
             if result.get('case_result'):
                 wx.MessageBox('已有测试结果，请重置此条测试用例后再进行测试', 'Warning')
                 return
             wx.CallAfter(self.case_disable)
-            http_manager.post_data('/update_start_time',
-                                   {'case_id': self.CaseID, 'actions': str(action_and_num)}, token=self.token)
+            start_time = http_manager.get_params(f'/get_start_time/{self.model_id}/{self.CaseID}').get('start_time')
+            if not start_time:
+                logger.warning('没有找到执行记录，插入开始时间')
+                now = datetime.now()
+                start_time = now.strftime('%Y-%m-%d %H:%M:%S')
+                http_manager.post_data('/update_start_time',
+                                       {'case_id': self.CaseID, 'model_id': self.model_id, 'start_time': start_time},
+                                       token=self.token)
             # 初始化终止信号
             self.patvs_monitor.stop_event = True
-            start_time = http_manager.get_start_time(self.CaseID)
+
             # 使用多线程异步运行，防止GUI界面卡死
             thread = threading.Thread(target=self.patvs_monitor.run_main,
                                       args=(int(self.CaseID), list(action_and_num), str(start_time),))
@@ -765,14 +803,14 @@ class TestCasesPanel(wx.Panel):
                     # 关闭等待提示框
                     wx.CallAfter(lambda: wait_dialog.__exit__(None, None, None))
 
-                # 更新显示
-                all_plans = http_manager.get_plan_names(self.username)
-                self.tree.DeleteAllItems()  # 清空现有的树状结构
-                self.plan_name_combo.Clear()
-                self.sheet_name_combo.Clear()  # 先清除之前的选项
-                self.plan_name_combo.AppendItems(all_plans)  # 添加新的选项
-                self.plan_name_combo.SetValue(all_plans[0])
-                self.on_plan_select(None)  # 自动加载 test_sheet
+                # # 更新显示
+                # all_plans = http_manager.get_plan_names(self.username)
+                # self.tree.DeleteAllItems()  # 清空现有的树状结构
+                # self.plan_name_combo.Clear()
+                # self.sheet_name_combo.Clear()  # 先清除之前的选项
+                # self.plan_name_combo.AppendItems(all_plans)  # 添加新的选项
+                # self.plan_name_combo.SetValue(all_plans[0])
+                # self.on_plan_select(None)  # 自动加载 test_sheet
 
             wx.CallAfter(complete_upload)
 
@@ -839,51 +877,69 @@ class TestCasesPanel(wx.Panel):
         dialog.Close()
 
     def check_status(self, event):
-        if not self.sheet_id:
+        if not self.sheet_id or not self.model_id:
             wx.MessageBox('请先选择用例', 'Warning')
             return
-        self.testCases = http_manager.get_cases_by_sheet_id(self.sheet_id)
+
+        # 获取用例数据
+        self.testCases = http_manager.get_cases_by_sheet_id(self.sheet_id, self.model_id)
+
         # 创建一个新的对话框，并且允许对话框最大化
         dialog = wx.Dialog(self, title="查看用例状态", size=(800, 600), style=wx.MAXIMIZE_BOX | wx.DEFAULT_DIALOG_STYLE)
+
         # 创建grid并设置行和列
         self.grid = wx.grid.Grid(dialog)
-        self.grid.CreateGrid(numRows=len(self.testCases), numCols=12)
+        self.grid.CreateGrid(numRows=len(self.testCases), numCols=13)  # 增加两列用于按钮
 
         # 设置列标题
-        cols_title = ['测试结果', '测试耗时(S)', '选择次数(弃用)', '测试机型', '用例标题', '前置条件', '用例步骤',
-                      '预期结果', '开始时间', '完成时间', '测试动作', '评论']
+        cols_title = ['重置按钮', '测试结果', '测试耗时(S)', '用例标题', '前置条件',
+                      '用例步骤', '预期结果', '开始时间', '完成时间', '评论', '失败次数', '阻塞次数', '查看图片']
         for i, title in enumerate(cols_title):
             self.grid.SetColLabelValue(i, title)
 
-        case_ids = list(self.testCases.keys())
-        comments_map = http_manager.post_data(f'/get_comments', {'case_ids': case_ids}, token=self.token).get(
-            'comments')
         # 填充数据
-        self.case_row_to_id = {}
-        for i, (case_id, case) in enumerate(self.testCases.items()):
-            self.case_row_to_id[i] = case_id  # 赋值ID为重置按钮使用
-            for j, item in enumerate(case[:-2]):  # 排除ID等敏感数据
-                if cols_title[j] == '评论':
-                    comments = comments_map.get(case_id, "")
-                    self.grid.SetCellValue(i, j, str(comments))
-                else:
-                    self.grid.SetCellValue(i, j, str(item))  # 第i行，第j列，数据
-                # 检查测试结果列，设置背景颜色
-                if cols_title[j] == '测试结果':
-                    if item == 'Pass':
-                        self.grid.SetCellBackgroundColour(i, j, wx.Colour(144, 238, 144))  # 浅绿色
-                    elif item == 'Fail' or item == 'Block':
-                        self.grid.SetCellBackgroundColour(i, j, wx.Colour(255, 99, 71))  # 浅红色
+        self.row_to_execution_id = {}
+        for i, case in enumerate(self.testCases):
+            execution_id = case.get('ExecutionID')
+            if execution_id is not None:
+                self.row_to_execution_id[i] = execution_id  # 记录行号与 ExecutionID 的映射
+
+            # 根据列标题填充数据
+            self.grid.SetCellValue(i, 1, str(case.get('TestResult', "")))
+            self.grid.SetCellValue(i, 2, str(case.get('TestTime', "")))
+            self.grid.SetCellValue(i, 3, case.get('CaseTitle', ""))
+            self.grid.SetCellValue(i, 4, str(case.get('PreConditions', "")))
+            self.grid.SetCellValue(i, 5, case.get('CaseSteps', ""))
+            self.grid.SetCellValue(i, 6, case.get('ExpectedResult', ""))
+            self.grid.SetCellValue(i, 7, str(case.get('StartTime', "") or ""))
+            self.grid.SetCellValue(i, 8, str(case.get('EndTime', "") or ""))
+            self.grid.SetCellValue(i, 9, str(case.get('Comment', "") or ""))
+            self.grid.SetCellValue(i, 10, str(case.get('FailCount', "") or ""))
+            self.grid.SetCellValue(i, 11, str(case.get('BlockConut', "") or ""))
+
+            # 设置背景颜色
+            test_result = case.get('TestResult', "")
+            if test_result == 'Pass':
+                self.grid.SetCellBackgroundColour(i, 1, wx.Colour(144, 238, 144))  # 浅绿色
+            elif test_result in ['Fail', 'Block']:
+                self.grid.SetCellBackgroundColour(i, 1, wx.Colour(255, 99, 71))  # 浅红色
+
+            # 为第一列设置“重置按钮”
+            self.grid.SetCellValue(i, 0, "重置")
+            self.grid.SetCellRenderer(i, 0, ButtonRenderer("重置"))
+
+            # 为最后一列设置“查看图片按钮”
+            self.grid.SetCellValue(i, 12, "查看图片")
+            self.grid.SetCellRenderer(i, 12, ButtonRenderer("查看图片"))
+
+        # 禁止直接编辑单元格
+        self.grid.EnableEditing(False)
+
+        # 绑定单元格点击事件
+        self.grid.Bind(wx.grid.EVT_GRID_CELL_LEFT_CLICK, self.on_cell_click)
         # 自动调整每一列和每一行的大小以适应内容
         self.grid.AutoSizeColumns()
         self.grid.AutoSizeRows()
-        # 添加重置按钮
-        self.grid.InsertCols(0)
-        cols_title.insert(0, "重置按钮")
-        for i in range(len(self.testCases)):
-            self.grid.SetCellRenderer(i, 0, ResetButtonRenderer())
-
-        self.grid.Bind(wx.grid.EVT_GRID_CELL_LEFT_CLICK, self.on_reset_click)
 
         # 创建下载按钮
         download_button = wx.Button(dialog, label="下载")
@@ -899,50 +955,168 @@ class TestCasesPanel(wx.Panel):
         dialog.ShowModal()
         dialog.Destroy()
 
-    def reset_grid(self, grid):
-        # 清除原有数据
-        grid.ClearGrid()
-        # 获取新的数据
-        # data = http_manager.get_params(f'/get_cases_by_case_id/{self.CaseID}')
-        # all_case = data.get('cases')
-        cols_title = ['测试结果', '测试耗时(S)', '选择次数(弃用)', '测试机型', '用例标题', '前置条件', '用例步骤',
-                      '预期结果', '开始时间', '完成时间', '测试动作', '评论']
-        self.testCases = http_manager.get_cases_by_sheet_id(self.sheet_id)
-        case_ids = list(self.testCases.keys())
-        comments_map = http_manager.post_data(f'/get_comments', {'case_ids': case_ids}, token=self.token).get(
-            'comments')
-        for i, (case_id, case) in enumerate(self.testCases.items()):
-            for j, item in enumerate(case[:-2]):  # 排除ID等敏感数据
-                if cols_title[j] == '评论':
-                    comments = comments_map.get(case_id, "")
-                    self.grid.SetCellValue(i, j + 1, str(comments))
-                else:
-                    self.grid.SetCellValue(i, j + 1, str(item))  # self.grid.InsertCols(0) 所以要j+1
-        #     grid.SetCellValue(i, j + 1, str(item))  # self.grid.InsertCols(0) 所以要j+1
-        # for i, case in enumerate(all_case):
-        #     for j, item in enumerate(case[:-2]):  # 排除用例ID
-        #         grid.SetCellValue(i, j + 1, str(item))  # self.grid.InsertCols(0) 所以要j+1
-        # 刷新网格以显示新的数据
-        grid.ForceRefresh()
+    def on_cell_click(self, event):
+        """处理单元格点击事件"""
+        row = event.GetRow()
+        col = event.GetCol()
 
-    def on_reset_click(self, evt):
-        row, col = evt.GetRow(), evt.GetCol()
-        # Check if "Reset" cell has been clicked
+        # 判断点击的是“重置按钮”列
         if col == 0:
-            case_id = self.case_row_to_id[row]
-            reset_msg = wx.MessageDialog(self, '您确定要重置这条用例测试结果吗?', '确认', wx.YES_NO | wx.ICON_QUESTION)
+            execution_id = self.row_to_execution_id.get(row)
+            if execution_id:
+                self.on_reset_click(event, execution_id)
+        # 判断点击的是“查看图片”列
+        elif col == 12:
+            execution_id = self.row_to_execution_id.get(row)
+            if execution_id:
+                self.on_view_image_click(execution_id)
+
+        # 继续处理其他事件
+        event.Skip()
+
+    def reset_grid(self):
+        self.grid.ClearGrid()
+        self.testCases = http_manager.get_cases_by_sheet_id(self.sheet_id, self.model_id)
+
+        for i, case in enumerate(self.testCases):
+            self.grid.SetCellValue(i, 1, str(case.get('TestResult', "")))
+            self.grid.SetCellValue(i, 2, str(case.get('TestTime', "")))
+            self.grid.SetCellValue(i, 3, case.get('CaseTitle', ""))
+            self.grid.SetCellValue(i, 4, case.get('PreConditions', ""))
+            self.grid.SetCellValue(i, 5, case.get('CaseSteps', ""))
+            self.grid.SetCellValue(i, 6, case.get('ExpectedResult', ""))
+            self.grid.SetCellValue(i, 7, str(case.get('Actions', "")))
+            self.grid.SetCellValue(i, 8, str(case.get('StartTime', "") or ""))
+            self.grid.SetCellValue(i, 9, str(case.get('EndTime', "") or ""))
+            self.grid.SetCellValue(i, 10, str(case.get('Comment', "") or ""))
+            self.grid.SetCellValue(i, 11, str(case.get('FailCount', "") or ""))
+            self.grid.SetCellValue(i, 12, str(case.get('BlockConut', "") or ""))
+
+        self.grid.ForceRefresh()
+
+    def on_reset_click(self, evt, execution_id):
+        #  row, col = evt.GetRow(), evt.GetCol()
+        """处理重置按钮点击事件"""
+        case_result = http_manager.get_params(f'/get_case_result', params={"execution_id": execution_id}).get('case_result')
+        if case_result:
+            case_id = None
+            for case in self.testCases:
+                if case.get('ExecutionID') == execution_id:
+                    case_id = case.get('CaseID')
+                    break
+            reset_msg = wx.MessageDialog(self, '您确定要重置这条用例测试结果吗?', '确认',
+                                         wx.YES_NO | wx.ICON_QUESTION)
             reset_response = reset_msg.ShowModal()
             if reset_response == wx.ID_YES:
-                logger.info(f"重置ID: {case_id} 的用例测试状态")
-                http_manager.post_data('/reset_case_result', {'case_id': case_id}, self.token)
+                logger.info(f"重置ExecutionID: {execution_id} 的用例测试状态")
+                http_manager.post_data('/reset_case_result', {'execution_id': execution_id}, self.token)
                 evt.Skip(False)
-                self.reset_grid(self.grid)  # 刷新网格布局
+                self.reset_grid()  # 刷新网格布局
                 wx.CallAfter(self.refresh_node_case_status, case_id=case_id)
                 wx.CallAfter(self.update_statistics)
                 self.tree.Refresh()
             reset_msg.Destroy()
+        else:
+            wx.MessageBox('此用例尚未执行，无法重置状态', '信息', wx.OK | wx.ICON_INFORMATION)
             return
         evt.Skip(True)
+
+    def on_view_image_click(self, execution_id):
+        """查看与 ExecutionID 相关的图片，生成 HTML 文件展示图片和信息"""
+
+        # 调用接口获取图片
+        response = http_manager.get_params(f'/get_images/{execution_id}')
+        images = response.get('images', [])
+        if not images:
+            logger.warning(f"No images found for Execution ID {execution_id}: {response}")
+            wx.MessageBox('未找到相关图片', 'Info')
+            return
+
+        # 生成 HTML 内容
+        html_content = f"""
+        <!DOCTYPE html>
+        <html lang="zh-CN">
+        <head>
+            <meta charset="UTF-8">
+            <meta name="viewport" content="width=device-width, initial-scale=1.0">
+            <title>Execution ID {execution_id} 图片预览</title>
+            <style>
+                body {{
+                    font-family: Arial, sans-serif;
+                    margin: 20px;
+                    line-height: 1.6;
+                }}
+                h1 {{
+                    text-align: center;
+                    color: #333;
+                }}
+                .image-card {{
+                    margin-bottom: 30px;
+                    border: 1px solid #ddd;
+                    padding: 15px;
+                    border-radius: 8px;
+                    box-shadow: 0 2px 5px rgba(0, 0, 0, 0.1);
+                }}
+                .image-info {{
+                    margin-bottom: 15px;
+                }}
+                .image-info p {{
+                    margin: 5px 0;
+                }}
+                img {{
+                    display: block;
+                    max-width: 100%;
+                    height: auto;
+                    margin: 0 auto;
+                    border: 1px solid #ccc;
+                    border-radius: 5px;
+                }}
+            </style>
+        </head>
+        <body>
+            <h1>Execution ID {execution_id} 图片预览</h1>
+        """
+
+        for index, image in enumerate(images):
+            url = image.get('url')
+            file_name = image.get('original_file_name', '未知文件名')
+            file_size = image.get('file_size', '未知大小')
+            mime_type = image.get('mime_type', '未知类型')
+            image_time = image.get('time', '未知时间')
+
+            if not url:
+                logger.warning(f"Image URL missing for Execution ID {execution_id} at index {index}")
+                continue
+
+            # 添加图片和信息到 HTML
+            html_content += f"""
+            <div class="image-card">
+                <div class="image-info">
+                    <p><strong>图片 {index + 1} 信息:</strong></p>
+                    <p>文件名: {file_name}</p>
+                    <p>文件大小: {file_size} 字节</p>
+                    <p>MIME 类型: {mime_type}</p>
+                    <p>时间: {image_time}</p>
+                    <p>URL: <a href="{url}" target="_blank">{url}</a></p>
+                </div>
+                <img src="{url}" alt="图片 {index + 1}">
+            </div>
+            """
+
+        html_content += """
+        </body>
+        </html>
+        """
+
+        # 将 HTML 写入文件
+        html_file = f"execution_{execution_id}_images.html"
+        with open(html_file, "w", encoding="utf-8") as file:
+            file.write(html_content)
+
+        # 使用默认浏览器打开 HTML 文件
+        html_path = os.path.abspath(html_file)
+        webbrowser.open(f"file://{html_path}")
+        logger.info(f"HTML file generated and opened in browser: {html_path}")
 
     def permutation_and_combination(self, event):
         """
@@ -954,7 +1128,7 @@ class TestCasesPanel(wx.Panel):
 
     def on_download(self, grid, event):
         """
-        下载用例
+        下载用例，包含图片数据
         :param grid:
         :param event:
         :return:
@@ -965,7 +1139,7 @@ class TestCasesPanel(wx.Panel):
         # 设置文件名和路径
         now = datetime.now()
         formatted_now = now.strftime('%Y_%m_%d_%H_%M_%S')
-        filename = f"PATVS_result_{formatted_now}.xlsx"
+        filename = f"TTS_result_{formatted_now}.xlsx"
         filepath = os.path.join(downloads_path, filename)
 
         # 创建一个Workbook和一个Worksheet
@@ -973,16 +1147,33 @@ class TestCasesPanel(wx.Panel):
         ws = wb.active
 
         # 设置列标题
-        cols_title = ['测试结果', '测试耗时(S)', '选择次数', '测试机型', '用例标题', '前置条件', '用例步骤', '预期结果',
-                      '开始时间', '完成时间', '测试动作', '评论']
+        cols_title = ['测试结果', '测试耗时(S)', '用例标题', '前置条件',
+                      '用例步骤', '预期结果', '开始时间', '完成时间', '评论', '失败次数', '阻塞次数', '图片数据']
         # 创建一个加粗的字体
         bold_font = Font(bold=True)
         ws.append(cols_title)
         for cell in ws["1:1"]:
             cell.font = bold_font
+
         # 填充数据
         for row in range(grid.GetNumberRows()):
-            row_data = [grid.GetCellValue(row, col) for col in range(1, grid.GetNumberCols())]  # 排除第一列
+            # 获取当前行的 ExecutionID
+            execution_id = self.row_to_execution_id.get(row)
+            image_data = ""
+
+            # 如果 ExecutionID 存在，调用接口获取图片数据
+            if execution_id:
+                response = http_manager.get_params(f'/get_images/{execution_id}')
+                images = response.get('images', [])
+                if images:
+                    # 将图片的 URL 或 Base64 数据拼接为字符串
+                    image_data = str(images)
+
+            # 获取当前行的所有单元格数据（排除第 0 列）
+            row_data = [grid.GetCellValue(row, col) for col in range(1, grid.GetNumberCols() - 1)]
+            # 将图片数据追加到行数据中
+            row_data.append(image_data)
+            # 写入 Excel 文件
             ws.append(row_data)
 
             # 根据测试结果设置单元格背景颜色
@@ -1008,17 +1199,19 @@ class TestCasesPanel(wx.Panel):
         """
         logger.warning("开始展示用例树节点")
         self.tree.DeleteAllItems()  # 清空现有的树状结构
-        self.testCases = http_manager.get_cases_by_sheet_id(sheet_id, model_id)
+        self.testCases = http_manager.get_cases_by_sheet_id(sheet_id, model_id)  # 获取用例数据（列表形式）
         self.update_statistics()
         if self.tree.GetImageList() is None:
             self.tree.AssignImageList(self.image_list)
 
         # 添加根节点并设置图标
         root = self.tree.AddRoot(self.sheet_name, self.icon_indices['Root'])
-        for key, value in self.testCases.items():
-            case_id = key
-            case_status = value[0]
-            case_title = value[6]
+        for case_data in self.testCases:
+            # 解析用例数据
+            case_id = case_data.get('CaseID')  # 用例ID
+            case_status = case_data.get('TestResult')  # 用例状态
+            case_title = case_data.get('CaseTitle')  # 用例标题
+
             # 根据状态添加相应的图标
             if case_status in self.icon_indices:
                 case_node = self.tree.AppendItem(root, case_title)
@@ -1051,17 +1244,19 @@ class TestCasesPanel(wx.Panel):
         logger.info(f"You selected the case with ID: {self.CaseID}")
         action_and_num = http_manager.get_params(f'/get_case_actions_and_num/{self.CaseID}').get('actions_and_num')
         self.actions_and_num.SetLabel(f"监控动作: {action_and_num}")
-        if self.CaseID in self.testCases:
-            case = self.testCases[self.CaseID]
+
+        # 在testCases中查找与CaseID匹配的用例
+        case = next((c for c in self.testCases if c.get('CaseID') == self.CaseID), None)
+        if case:
             self.content.Clear()
             self.log_content.Clear()
             self.content.SetValue(f"测试机型: {self.model_name}\n\n")
-            self.content.AppendText(f"用例标题:\n{case[6]}\n\n")
-            self.content.AppendText(f"前置条件:\n{case[7]}\n\n")
-            self.content.AppendText(f"操作步骤:\n{case[8]}\n\n")
+            self.content.AppendText(f"用例标题:\n{case.get('CaseTitle')}\n\n")
+            self.content.AppendText(f"前置条件:\n{case.get('PreConditions')}\n\n")
+            self.content.AppendText(f"操作步骤:\n{case.get('CaseSteps')}\n\n")
             self.content.SetInsertionPointEnd()  # 移动光标到末尾以便于添加蓝色文本
             self.content.SetDefaultStyle(wx.TextAttr(wx.BLUE))
-            self.content.AppendText(f"预期结果:\n{case[9]}")
+            self.content.AppendText(f"预期结果:\n{case.get('ExpectedResult')}")
             # 再次将文本颜色设置回默认颜色，以防止后续文本也变为蓝色
             self.content.SetDefaultStyle(wx.TextAttr(wx.BLACK))
             wx.CallAfter(self.scroll_to_top)  # 调用滚动方法

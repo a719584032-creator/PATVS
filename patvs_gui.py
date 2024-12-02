@@ -183,7 +183,7 @@ class MainApp(wx.App):
             role = login_dialog.logged_in_role  # 获取用户角色
 
             if role == 'admin':
-                frame = AdminWindow(None, title="Test Tracking System-Admin", token=token)
+                frame = AdminWindow(None, title="Test Tracking System-Admin", username=username, token=token)
             else:
                 frame = MainWindow(None, title="Test Tracking System-1.0.4", username=username, token=token)
 
@@ -223,11 +223,11 @@ class MainWindow(wx.Frame):
 
 
 class AdminWindow(wx.Frame):
-    def __init__(self, parent, title, token):
+    def __init__(self, parent, title, username, token):
         super(AdminWindow, self).__init__(parent, title=title, size=(1000, 700))
 
         # Admin用户的界面逻辑
-        self.panel = TestAdminPanel(self, token)
+        self.panel = TestAdminPanel(self, username, token)
 
         # 设置图标
         if getattr(sys, 'frozen', False):

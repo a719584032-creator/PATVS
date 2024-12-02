@@ -87,54 +87,71 @@ class TimePanel(wx.Panel):
 
 
 class TestAdminPanel(wx.Panel):
-    def __init__(self, parent, token):
+    def __init__(self, parent, username, token):
         super().__init__(parent)
+        self.username = username  # 保存用户名
         self.token = token
+        self.userid = http_manager.get_params(f'/get_userid/{self.username}').get('user_id')  # 保存用户名
         # 创建主布局
         mainSizer = wx.BoxSizer(wx.VERTICAL)
-
         # 用例筛选下拉框
-        try:
-            data = http_manager.get_params('/get_plan_names_by_admin')
-            plan_names = data.get('plan_names')
-        except Exception as e:
-            wx.MessageBox(f'未知错误: {str(e)}', 'Error', wx.OK | wx.ICON_ERROR)
-            plan_names = []
-        self.plan_name_combo = wx.ComboBox(self, choices=plan_names)
+        # 固定宽度
+        fixed_width = 200
+        self.project_name_combo = wx.ComboBox(self)
+        self.project_name_combo.SetMinSize(wx.Size(150, -1))
+        self.project_name_combo.Bind(wx.EVT_COMBOBOX, self.on_project_select)
+        self.project_name_combo.Bind(wx.EVT_MOTION, self.on_project_hover)  # 鼠标悬停时动态加载数据
+
+        self.plan_name_combo = wx.ComboBox(self)
+        self.plan_name_combo.SetMinSize(wx.Size(fixed_width, -1))
         self.plan_name_combo.Bind(wx.EVT_COMBOBOX, self.on_plan_select)
         self.plan_name_combo.Bind(wx.EVT_MOTION, self.on_plan_hover)
 
-        # 添加新的下拉框用于显示 sheet_name
+        self.model_name_combo = wx.ComboBox(self)
+        self.model_name_combo.SetMinSize(wx.Size(fixed_width, -1))
+        self.model_name_combo.Bind(wx.EVT_COMBOBOX, self.on_model_select)
+        self.model_name_combo.Bind(wx.EVT_MOTION, self.on_model_hover)
+
         self.sheet_name_combo = wx.ComboBox(self)
+        self.sheet_name_combo.SetMinSize(wx.Size(fixed_width, -1))
         self.sheet_name_combo.Bind(wx.EVT_COMBOBOX, self.on_sheet_select)
         self.sheet_name_combo.Bind(wx.EVT_MOTION, self.on_sheet_hover)
+
         # 创建一个水平盒子来放置 case_search_combo 下拉框
         caseSearchSizer = wx.BoxSizer(wx.HORIZONTAL)
+
+        self.projectLabel = wx.StaticText(self, label="项目")
+        caseSearchSizer.Add(self.projectLabel, 0, wx.ALL, 5)
+        caseSearchSizer.Add(self.project_name_combo, 0, wx.ALL, 5)
 
         self.planLabel = wx.StaticText(self, label="测试计划")
         caseSearchSizer.Add(self.planLabel, 0, wx.ALL, 5)
         caseSearchSizer.Add(self.plan_name_combo, 0, wx.ALL, 5)
 
+        self.modelLabel = wx.StaticText(self, label="测试机型")
+        caseSearchSizer.Add(self.modelLabel, 0, wx.ALL, 5)
+        caseSearchSizer.Add(self.model_name_combo, 0, wx.ALL, 5)
+
         self.sheetLabel = wx.StaticText(self, label="测试用例")
         caseSearchSizer.Add(self.sheetLabel, 0, wx.ALL, 5)
         caseSearchSizer.Add(self.sheet_name_combo, 0, wx.ALL, 5)
 
-        # 添加修改按钮
-        self.modify_button = wx.Button(self, label="修改")
-        self.modify_button.Bind(wx.EVT_BUTTON, self.on_modify)
-        caseSearchSizer.Add(self.modify_button, 0, wx.CENTER | wx.ALL, 5)
+        #  caseSearchSizer.Add(self.modify_button, 0, wx.CENTER | wx.ALL, 5)
 
         mainSizer.Add(caseSearchSizer, 0, wx.EXPAND)
         # 新增一行放置测试人员、项目、预估时间的 Label
         infoSizer = wx.BoxSizer(wx.HORIZONTAL)
         self.testerLabel = wx.StaticText(self, label="测试人员:")
-        self.projectLabel = wx.StaticText(self, label="项目:")
         self.timeLabel = wx.StaticText(self, label="预估时间:")
+        # 添加修改按钮
+        self.modify_button = wx.Button(self, label="修改")
+        self.modify_button.Bind(wx.EVT_BUTTON, self.on_modify)
+
         infoSizer.Add(self.testerLabel, 0, wx.ALL, 5)
         infoSizer.AddSpacer(100)
-        infoSizer.Add(self.projectLabel, 0, wx.ALL, 5)
-        infoSizer.AddSpacer(100)
         infoSizer.Add(self.timeLabel, 0, wx.ALL, 5)
+        infoSizer.AddSpacer(100)
+        infoSizer.Add(self.modify_button, 0, wx.CENTER | wx.ALL, 5)
         mainSizer.Add(infoSizer, 0, wx.EXPAND)
 
         # 创建一个 notebook，用于添加多个面板
@@ -148,6 +165,76 @@ class TestAdminPanel(wx.Panel):
         mainSizer.Add(self.notebook, 1, wx.EXPAND)
 
         self.SetSizer(mainSizer)
+
+    def on_project_select(self, event):
+        logger.warning("开始调用 on_project_select")
+        # 获取选择的项目名称
+        project_name = self.project_name_combo.GetValue()
+
+        # 根据项目名称获取计划名称
+        plan_names_with_ids = http_manager.get_plan_names(self.userid, project_name)
+
+        # 清空并重新填充 plan_name_combo
+        self.plan_name_combo.Clear()
+        for plan_id, plan_name in plan_names_with_ids:
+            self.plan_name_combo.Append(plan_name, plan_id)
+
+        # 清空 sheet_name_combo，因为项目改变可能导致计划和用例表的变化
+        self.model_name_combo.Clear()
+        self.sheet_name_combo.Clear()
+        logger.warning("结束调用 on_project_select")
+
+    def on_model_select(self, event):
+        # 选择测试计划后，更新测试机型
+        logger.warning('开始调用 model select')
+        selected_index = self.model_name_combo.GetSelection()
+        if selected_index != wx.NOT_FOUND:
+            self.model_id = self.model_name_combo.GetClientData(selected_index)
+            self.model_name = self.model_name_combo.GetString(selected_index)
+            logger.warning(self.model_id)
+            logger.warning(self.model_name)
+        sheet_names_with_ids = http_manager.get_sheet_names(self.plan_id)
+        # 清空并重新填充 sheet_name_combo
+        self.sheet_name_combo.Clear()
+        for sheet_id, sheet_name in sheet_names_with_ids:
+            self.sheet_name_combo.Append(sheet_name, sheet_id)
+        logger.warning('调用 model select 结束')
+
+    def on_project_hover(self, event):
+        """
+        当鼠标悬停在项目下拉框时，动态加载项目数据，同时保留当前选中的项目
+        """
+        logger.info("开始动态加载项目数据")
+        try:
+            # 获取当前选中的项目名称
+            current_selection = self.project_name_combo.GetValue()
+
+            # 调用接口获取最新的项目名称列表
+            project_names = http_manager.get_params(f'/get_project_names/{self.userid}').get('project_names', [])
+
+            # 清空并重新填充 project_name_combo
+            self.project_name_combo.Clear()
+            for project_name in project_names:
+                self.project_name_combo.Append(project_name)
+
+            # 如果之前有选中的项目，尝试重新设置选中状态
+            if current_selection in project_names:
+                self.project_name_combo.SetValue(current_selection)
+            else:
+                # 如果当前选中的项目不在最新列表中，清空选中状态
+                self.project_name_combo.SetValue("")
+
+            logger.info("项目数据加载完成")
+        except Exception as e:
+            logger.error(f"加载项目数据失败: {e}")
+        event.Skip()
+
+    def on_model_hover(self, event):
+        # 获取当前选择的内容
+        selection = self.model_name_combo.GetStringSelection()
+        if selection:
+            self.model_name_combo.SetToolTip(selection)
+        event.Skip()
 
     def on_plan_hover(self, event):
         # 获取当前选择的内容
@@ -165,36 +252,35 @@ class TestAdminPanel(wx.Panel):
 
     def on_plan_select(self, event):
         # 选择测试计划后，更新用例表下拉框和测试人员
-        plan_name = self.plan_name_combo.GetValue()
-        try:
-            plan_id = http_manager.get_params(f'/get_plan_id/{plan_name}').get('plan_id')
-            # 获取并显示统计数据
-            data = http_manager.get_params(f'/calculate_plan_statistics/{plan_id}').get('result')
-            sheet_names_with_ids = http_manager.get_params(f'/get_sheet_names_by_admin/{plan_name}').get(
-                'sheet_names_with_ids')
-
-            # 清空并重新填充 sheet_name_combo
-            self.sheet_name_combo.Clear()
-            for sheet_id, sheet_name in sheet_names_with_ids:
-                self.sheet_name_combo.Append(sheet_name, sheet_id)
-
+        logger.warning('开始调用 plan select')
+        selected_index = self.plan_name_combo.GetSelection()
+        if selected_index != wx.NOT_FOUND:
+            self.plan_id = self.plan_name_combo.GetClientData(selected_index)
+            self.plan_name = self.plan_name_combo.GetString(selected_index)
+        model_names_with_ids = http_manager.get_params(f'/get_model_names/{self.plan_id}').get('model_names')
+        data = http_manager.get_params(f'/calculate_plan_statistics/{self.plan_id}').get('result')
+        # 清空并重新填充 model_name_combo
+        self.model_name_combo.Clear()
+        self.sheet_name_combo.Clear()
+        for model_id, model_name in model_names_with_ids:
+            self.model_name_combo.Append(model_name, model_id)
             # 更新测试人员和图表
-            self.update_tester_label(data)
-            self.count_panel.update_case_counts(data)
-            self.percentage_panel.update_percentages(data)
-            self.case_time_panel.update_time_counts(data)
-        except Exception as e:
-            wx.MessageBox(f'未知错误: {str(e)}', 'Error', wx.OK | wx.ICON_ERROR)
+        self.update_tester_label(data)
+        self.count_panel.update_case_counts(data)
+        self.percentage_panel.update_percentages(data)
+        self.case_time_panel.update_time_counts(data)
+
 
     def on_sheet_select(self, event):
         # 选择用例表后，更新测试人员和可视化内容
         selected_index = self.sheet_name_combo.GetSelection()
         if selected_index != wx.NOT_FOUND:
-            sheet_id = self.sheet_name_combo.GetClientData(selected_index)
-            sheet_name = self.sheet_name_combo.GetString(selected_index)
+            self.sheet_id = self.sheet_name_combo.GetClientData(selected_index)
+            self.sheet_name = self.sheet_name_combo.GetString(selected_index)
             try:
                 # 获取并显示统计数据
-                data = http_manager.get_params(f'/calculate_progress_and_pass_rate/{sheet_id}').get('result')
+                pamars = {'planId': self.plan_id, 'modelId': self.model_id, 'sheetId': self.sheet_id}
+                data = http_manager.get_params(f'/calculate_progress_and_pass_rate', params=pamars).get('result')
                 # 更新测试人员及图表
                 self.update_tester_label(data)
                 self.count_panel.update_case_counts(data)
@@ -206,7 +292,6 @@ class TestAdminPanel(wx.Panel):
     def update_tester_label(self, data):
         try:
             self.testerLabel.SetLabel(f"测试人员: {data['tester']}")
-            self.projectLabel.SetLabel(f"项目: {data['project_name']}")
             self.timeLabel.SetLabel(f"预估时间: {data['workloading_time']} 分钟")
         except Exception as e:
             wx.MessageBox(f'未知错误: {str(e)}', 'Error', wx.OK | wx.ICON_ERROR)
@@ -235,14 +320,14 @@ class TestAdminPanel(wx.Panel):
                         'sheet_id': sheet_id,
                         'tester': new_data['tester'],
                         'project': new_data['project'],
-                        'workloading': new_data['workloading']+'(Min)',
+                        'workloading': new_data['workloading'] + '(Min)',
                     }
                 else:
                     data = {
                         'plan_name': plan_name,
                         'tester': new_data['tester'],
                         'project': new_data['project'],
-                        'workloading': new_data['workloading']+'(Min)',
+                        'workloading': new_data['workloading'] + '(Min)',
                     }
                 logger.warning(data)
                 http_manager.post_data('/update_project_workloading_tester', data=data, token=self.token)
@@ -322,10 +407,3 @@ class ModifyDialog(wx.Dialog):
             event.Skip()  # 允许数字输入和删除键
         else:
             return  # 阻止其他字符输入
-
-
-
-
-
-
-

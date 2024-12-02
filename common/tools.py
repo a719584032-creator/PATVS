@@ -78,18 +78,16 @@ class Public(object):
 
     @staticmethod
     def get_root_path():
-        # 如果程序被打包成了单一文件，_MEIPASS 会提供临时目录
-        if getattr(sys, 'frozen', False):
+        if getattr(sys, 'frozen', False):  # 判断是否为打包后的环境
+            # 打包环境下，返回 PyInstaller 的临时目录
             application_path = sys._MEIPASS
         else:
-            # 如果程序没有被打包，则使用__file__获取当前文件路径
-            application_path = os.path.dirname(__file__)
+            # 开发环境下，返回项目的根目录
+            application_path = os.path.dirname(os.path.abspath(__file__))  # 当前脚本目录
+            # 如果脚本在子目录下（如 common），返回上一级目录
+            application_path = os.path.abspath(os.path.join(application_path, '..'))
 
-        # 从应用程序路径构建到数据库的路径
-        db_path = os.path.join(application_path, '..')
-        # 规范化路径，消除..等相对元素，获取绝对路径
-        root_path = os.path.abspath(db_path)
-        return root_path
+        return application_path
 
     @staticmethod
     def resource_path(relative_path):

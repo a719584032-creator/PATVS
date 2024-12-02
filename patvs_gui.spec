@@ -1,10 +1,16 @@
 # -*- mode: python ; coding: utf-8 -*-
+import glob
+
+# 动态获取 conf 目录下的所有文件
+conf_files = [(file, 'conf') for file in glob.glob('D:\\PATVS\\conf\\*')]
+
 # 设置资源文件和目录
 added_files = [
     ('D:\\PATVS\\ui_manager\\icon\\*', 'icon'),
     ('D:\\PATVS\\common', 'common'),
+    ('D:\\PATVS\\config_manager', 'config_manager'),
     ('D:\\PATVS\\config.json', 'config.json')
-]
+] + conf_files
 
 hidden_imports = [
     'loguru',
