@@ -457,7 +457,7 @@ def get_case_result():
         # 根据 model_id 和 case_id 查询
         elif model_id is not None and case_id is not None:
             logger.info(f"Fetching case result for model_id: {model_id}, case_id: {case_id}")
-            case_result = manager.select_case_result_by_id(model_id, case_id)
+            case_result = manager.select_case_result_by_id(case_id, model_id)
         else:
             # 参数不足，返回 400 错误
             logger.warning("Invalid parameters: either execution_id or both model_id and case_id must be provided.")

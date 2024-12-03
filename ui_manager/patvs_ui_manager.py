@@ -982,7 +982,7 @@ class TestCasesPanel(wx.Panel):
             self.grid.SetCellValue(i, 1, str(case.get('TestResult', "")))
             self.grid.SetCellValue(i, 2, str(case.get('TestTime', "")))
             self.grid.SetCellValue(i, 3, case.get('CaseTitle', ""))
-            self.grid.SetCellValue(i, 4, case.get('PreConditions', ""))
+            self.grid.SetCellValue(i, 4, str(case.get('PreConditions', "")))
             self.grid.SetCellValue(i, 5, case.get('CaseSteps', ""))
             self.grid.SetCellValue(i, 6, case.get('ExpectedResult', ""))
             self.grid.SetCellValue(i, 7, str(case.get('Actions', "")))
@@ -1163,11 +1163,15 @@ class TestCasesPanel(wx.Panel):
 
             # 如果 ExecutionID 存在，调用接口获取图片数据
             if execution_id:
-                response = http_manager.get_params(f'/get_images/{execution_id}')
-                images = response.get('images', [])
-                if images:
-                    # 将图片的 URL 或 Base64 数据拼接为字符串
-                    image_data = str(images)
+                try:
+                    response = http_manager.get_params(f'/get_images/{execution_id}')
+                    images = response.get('images', [])
+                    if images:
+                        # 将图片的 URL 或 Base64 数据拼接为字符串
+                        image_data = str(images)
+                # 客观场景是不用上传图片的
+                except BaseException as e:
+                    logger.warning(f"下载用例图片时出现错误: {e}")
 
             # 获取当前行的所有单元格数据（排除第 0 列）
             row_data = [grid.GetCellValue(row, col) for col in range(1, grid.GetNumberCols() - 1)]

@@ -25,6 +25,7 @@ import json
 import threading
 import win32api
 import screen_brightness_control as sbc
+import cv2
 
 
 class Patvs_Fuction():
@@ -714,10 +715,10 @@ class Patvs_Fuction():
 
             except Exception as e:
                 # 当无法获取亮度时，假定屏幕已关闭
-                wx.CallAfter(self.window.add_log_message, f"无法获取亮度，假定屏幕已关闭: {e}")
+                wx.CallAfter(self.window.add_log_message, f"检测到屏幕已关闭: {e}")
                 if was_display_on:
                     off_cycle_count += 1
-                    wx.CallAfter(self.window.add_log_message, "显示器关闭周期完成: {off_cycle_count} 次")
+                    wx.CallAfter(self.window.add_log_message, f"显示器关闭周期完成: {off_cycle_count} 次")
                 was_display_on = False
 
             time.sleep(2)  # 每2秒检测一次
@@ -757,6 +758,51 @@ class Patvs_Fuction():
                 previous_volume = current_volume
 
         wx.CallAfter(self.window.add_log_message, "音量变化次数已达到目标次数，退出监控。")
+        self.action_complete.set()  # 设置动作完成状态
+
+    def monitor_video_changes(self, target_cycles):
+        """
+        检测摄像头开关周期，并在达到目标周期次数后退出。
+
+        :param target_cycles: 目标开关周期次数
+        :return: None
+        """
+        cycle_count = 0  # 记录完整的开关周期数
+        last_camera_state = None  # 上一次的摄像头状态（True: 被调用, False: 未被调用）
+        cycle_started = False  # 标记是否进入了一个开关周期
+
+        while self.stop_event and cycle_count < target_cycles:
+            # 尝试打开摄像头
+            cap = cv2.VideoCapture(0)
+            ret, frame = cap.read()  # 尝试读取帧
+            cap.release()  # 释放摄像头资源
+
+            # 当前摄像头状态
+            current_camera_state = ret  # True: 摄像头没有被占用 False: 摄像头被占用
+
+            # 检测开关周期
+            if last_camera_state is not None:
+                if not cycle_started and last_camera_state == True and current_camera_state == False:
+                    # 从“没有被占用”切换到“被占用”，标记周期开始
+                    cycle_started = True
+                    wx.CallAfter(self.window.add_log_message, "检测到摄像头被占用，开关周期开始。")
+                elif cycle_started and last_camera_state == False and current_camera_state == True:
+                    # 从“被占用”切换回“没有被占用”，标记周期结束
+                    cycle_count += 1
+                    cycle_started = False
+                    wx.CallAfter(self.window.add_log_message,
+                                 f"检测到摄像头可以调用，完成一个开关周期！当前周期数：{cycle_count}")
+            # 更新上一次的摄像头状态
+            last_camera_state = current_camera_state
+
+            # 如果达到目标周期数，退出检测
+            if cycle_count >= target_cycles:
+                print(f"摄像头开关周期数已达到目标值 ({target_cycles})，退出检测。")
+                break
+            # 等待一段时间后再次检测
+            time.sleep(1)
+
+        wx.CallAfter(self.window.add_log_message, "摄像头开关次数已达到目标次数，退出监控。")
         self.action_complete.set()  # 设置动作完成状态
 
     def encrypt_data(self, data):
@@ -863,6 +909,9 @@ class Patvs_Fuction():
                     elif action == '音量':
                         wx.CallAfter(self.window.add_log_message, f"开始执行监控: {action}，目标测试次数: {test_num}")
                         threading.Thread(target=self.monitor_volume_changes, args=(test_num,)).start()
+                    elif action == '摄像头':
+                        wx.CallAfter(self.window.add_log_message, f"开始执行监控: {action}，目标测试次数: {test_num}")
+                        threading.Thread(target=self.monitor_video_changes, args=(test_num,)).start()
                     # 等待当前监控动作完成
                     self.action_complete.wait()
                     wx.CallAfter(self.window.add_log_message, f"动作 {action} 完成")
