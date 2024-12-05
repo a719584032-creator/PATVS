@@ -151,13 +151,14 @@ class Patvs_Fuction():
         """
         count = 0
         num_time = num_time * 60
-        wx.CallAfter(self.window.add_log_message, f"等待时间: {num_time} 秒")
+        wx.CallAfter(self.window.add_log_message, f"执行时间: {num_time} 秒")
         try:
             while self.stop_event and count < num_time:
                 count += 1
                 time.sleep(1)
                 wx.CallAfter(self.window.add_log_message, f"Running time {count} of ")
         finally:
+            wx.CallAfter(self.window.add_log_message, "已停止测试时间监控")
             self.action_complete.set()  # 设置动作完成状态
 
     def monitor_power_plug_changes(self, target_cycles):
@@ -185,18 +186,18 @@ class Patvs_Fuction():
                         # 当检测到拔出动作后计算一次周期
                         if not plugged_in:
                             plug_unplug_cycles += 1
-                            message = f"Power plug/unplug cycle completed: {plug_unplug_cycles} times"
+                            message = f"电源插拔完成次数: {plug_unplug_cycles}"
                             wx.CallAfter(self.window.add_log_message, message)
                         if plug_unplug_cycles >= target_cycles:
                             wx.CallAfter(self.window.add_log_message,
-                                         f"Target power plug/unplug cycles {plug_unplug_cycles} reached. Exiting.")
+                                         f"已完成目标插拔次数:{plug_unplug_cycles} ，Exiting....")
                             break
                 else:
                     logger.error("No battery information found")
                     break
                 time.sleep(1)
         finally:
-            wx.CallAfter(self.window.add_log_message, "Stopped monitoring power plug/unplug")
+            wx.CallAfter(self.window.add_log_message, "已停止电源插拔监控")
             self.action_complete.set()  # 设置动作完成状态
 
     def count_s3_sleep_events(self, start_time):
@@ -283,7 +284,7 @@ class Patvs_Fuction():
 
                 if total >= target_cycles:
                     wx.CallAfter(self.window.add_log_message,
-                                 f"Reached target cycles. S3 sleep events: {total}")
+                                 f"已完成目标S3次数: {total}")
                     return
         finally:
             if hand:
@@ -291,7 +292,7 @@ class Patvs_Fuction():
                     win32evtlog.CloseEventLog(hand)
                 except Exception as e:
                     logger.warning(f"S3 Final close error: {e}")
-            wx.CallAfter(self.window.add_log_message, "Stopped monitoring S3 sleep events.")
+            wx.CallAfter(self.window.add_log_message, "停止S3事件监控.")
             self.action_complete.set()  # 设置动作完成状态
 
     def get_event_data(self, event):
@@ -385,10 +386,10 @@ class Patvs_Fuction():
                                                  f'SleepTime: {sleep_time}, WakeTime: {wake_time}')
                                 if total >= target_cycles:
                                     wx.CallAfter(self.window.add_log_message,
-                                                 f"Reached target cycles. S4 sleep events: {total}")
+                                                 f"已完成目标S4次数: {total}")
                                     return
         finally:
-            wx.CallAfter(self.window.add_log_message, "Stopped monitoring S4 sleep events.")
+            wx.CallAfter(self.window.add_log_message, "停止S4事件监控.")
             if hand:
                 try:
                     win32evtlog.CloseEventLog(hand)
@@ -478,11 +479,13 @@ class Patvs_Fuction():
                             # 仅输出增量日志
                             if total > log_num:
                                 wx.CallAfter(self.window.add_log_message,
-                                             f"Reached target cycles. S5 sleep events: {total}")
+                                             f"当前已测试 {total} 次，目标次数为 {target_cycles} 次。")
                             if total >= target_cycles:
+                                wx.CallAfter(self.window.add_log_message,
+                                             f"已完成目标S5次数: {target_cycles}")
                                 return
         finally:
-            wx.CallAfter(self.window.add_log_message, "Stopped monitoring S5 sleep events.")
+            wx.CallAfter(self.window.add_log_message, "停止S5事件监控.")
             if hand:
                 try:
                     win32evtlog.CloseEventLog(hand)
@@ -545,11 +548,13 @@ class Patvs_Fuction():
                             total += 1
                             if total > log_num:
                                 wx.CallAfter(self.window.add_log_message,
-                                             f"Reached target cycles. ReStart sleep events: {total}")
+                                             f"当前已测试 {total} 次，目标次数为 {target_cycles} 次。")
                             if total >= target_cycles:
+                                wx.CallAfter(self.window.add_log_message,
+                                             f"已完成目标 restart 次数:{target_cycles} 。")
                                 return
         finally:
-            wx.CallAfter(self.window.add_log_message, "Stopped monitoring ReStart sleep events.")
+            wx.CallAfter(self.window.add_log_message, "停止 restart 事件监控.")
             if hand:
                 try:
                     win32evtlog.CloseEventLog(hand)
@@ -580,7 +585,7 @@ class Patvs_Fuction():
                 wx.CallAfter(self.window.add_log_message, f"Key pressed: {pressed_key}. Total count: {key_count}")
 
                 if key_count >= target_cycles:
-                    wx.CallAfter(self.window.add_log_message, "Reached target keystroke count. Exiting...")
+                    wx.CallAfter(self.window.add_log_message, "检测到已完成目标键盘按键次数. Exiting...")
                     listener_stopped.set()  # 设置监听器已停止的事件
                     return False  # Stop the listener
 
@@ -590,7 +595,7 @@ class Patvs_Fuction():
                     time.sleep(0.1)  # 检查间隔
 
                 if not listener_stopped.is_set():  # 如果监听器还没停，则停止它
-                    wx.CallAfter(self.window.add_log_message, "Stop event triggered. Exiting listener...")
+                    wx.CallAfter(self.window.add_log_message, "程序终止，停止键盘按键监控...")
                     listener.stop()  # 立即停止监听器
                     listener_stopped.set()  # 确保事件被设置
 
@@ -601,7 +606,7 @@ class Patvs_Fuction():
                 listener.join()  # 等待监听器停止
                 stop_thread.join()  # 等待后台线程停止
         finally:
-            wx.CallAfter(self.window.add_log_message, "Stopped monitoring keystrokes.")
+            wx.CallAfter(self.window.add_log_message, "停止键盘按键监控")
             self.action_complete.set()  # 设置动作完成状态
 
     def monitor_keystrokes2(self, target_cycles, key_name=None):
@@ -656,7 +661,7 @@ class Patvs_Fuction():
                     message = f"Mouse clicked at ({x}, {y}) with {button}. Total count: {click_count}"
                     wx.CallAfter(self.window.add_log_message, message)
                     if click_count >= target_cycles:
-                        message = "Reached target click count. Exiting..."
+                        message = "已完成目标点击次数. Exiting..."
                         wx.CallAfter(self.window.add_log_message, message)
                         listener_stopped.set()  # 设置监听器已停止的事件
                         return False  # Stop the listener
@@ -667,7 +672,7 @@ class Patvs_Fuction():
                     time.sleep(0.1)  # 检查间隔
 
                 if not listener_stopped.is_set():  # 如果监听器还没停，则停止它
-                    wx.CallAfter(self.window.add_log_message, "Stop event triggered. Exiting listener...")
+                    wx.CallAfter(self.window.add_log_message, "程序终止，停止鼠标点击事件监控...")
                     listener.stop()  # 立即停止监听器
                     listener_stopped.set()  # 确保事件被设置
 
@@ -679,7 +684,7 @@ class Patvs_Fuction():
                 stop_thread.join()  # 等待后台线程停止
 
         finally:
-            wx.CallAfter(self.window.add_log_message, "Stopped monitoring click.")
+            wx.CallAfter(self.window.add_log_message, "停止鼠标点击事件监控")
             self.action_complete.set()  # 设置动作完成状态
 
     def monitor_display_status(self, target_cycles):
@@ -722,8 +727,10 @@ class Patvs_Fuction():
                 was_display_on = False
 
             time.sleep(2)  # 每2秒检测一次
-
-        wx.CallAfter(self.window.add_log_message, "目标显示器关闭周期次数已达到，退出监控。")
+        if self.stop_event:
+            wx.CallAfter(self.window.add_log_message, "显示器开关次数已达到目标次数，退出监控。")
+        else:
+            wx.CallAfter(self.window.add_log_message, "退出显示器开关监控。")
         self.action_complete.set()  # 设置动作完成状态
 
     def get_volume(self):
@@ -756,8 +763,10 @@ class Patvs_Fuction():
                 wx.CallAfter(self.window.add_log_message,
                              f"音量变化次数: {change_count}, 当前音量: {current_volume * 100:.2f}%")
                 previous_volume = current_volume
-
-        wx.CallAfter(self.window.add_log_message, "音量变化次数已达到目标次数，退出监控。")
+        if self.stop_event:
+            wx.CallAfter(self.window.add_log_message, "音量变化次数已达到目标次数，退出监控。")
+        else:
+            wx.CallAfter(self.window.add_log_message, "退出音量加减事件监控。")
         self.action_complete.set()  # 设置动作完成状态
 
     def monitor_video_changes(self, target_cycles):
@@ -797,12 +806,12 @@ class Patvs_Fuction():
 
             # 如果达到目标周期数，退出检测
             if cycle_count >= target_cycles:
-                print(f"摄像头开关周期数已达到目标值 ({target_cycles})，退出检测。")
+                wx.CallAfter(self.window.add_log_message,f"摄像头开关周期数已达到目标值 ({target_cycles})，退出检测。")
                 break
             # 等待一段时间后再次检测
             time.sleep(1)
 
-        wx.CallAfter(self.window.add_log_message, "摄像头开关次数已达到目标次数，退出监控。")
+        wx.CallAfter(self.window.add_log_message, "退出摄像头开关事件监控。")
         self.action_complete.set()  # 设置动作完成状态
 
     def encrypt_data(self, data):
@@ -850,7 +859,7 @@ class Patvs_Fuction():
 
             # 显示日志信息
             wx.CallAfter(self.window.add_log_message, f"请按照提示依次执行以下动作:")
-            for action, test_num in action_and_num:
+            for action, test_num in self.remaining_actions:
                 if action == '时间':
                     wx.CallAfter(self.window.add_log_message, f"您选择的动作是: {action}，目标测试时间: {test_num} min")
                 else:
@@ -904,13 +913,13 @@ class Patvs_Fuction():
                                      f"开始执行监控按键: {action}，目标测试次数: {test_num}")
                         threading.Thread(target=self.monitor_keystrokes2, args=(test_num, action,)).start()
                     elif action == '显示器':
-                        wx.CallAfter(self.window.add_log_message, f"开始执行监控: {action}，目标测试次数: {test_num}")
+                        wx.CallAfter(self.window.add_log_message, f"开始执行监控: {action} 开关事件，目标测试次数: {test_num}")
                         threading.Thread(target=self.monitor_display_status, args=(test_num,)).start()
                     elif action == '音量':
-                        wx.CallAfter(self.window.add_log_message, f"开始执行监控: {action}，目标测试次数: {test_num}")
+                        wx.CallAfter(self.window.add_log_message, f"开始执行监控: {action} 加减事件，目标测试次数: {test_num}")
                         threading.Thread(target=self.monitor_volume_changes, args=(test_num,)).start()
                     elif action == '摄像头':
-                        wx.CallAfter(self.window.add_log_message, f"开始执行监控: {action}，目标测试次数: {test_num}")
+                        wx.CallAfter(self.window.add_log_message, f"开始执行监控: {action} 开关事件，目标测试次数: {test_num}")
                         threading.Thread(target=self.monitor_video_changes, args=(test_num,)).start()
                     # 等待当前监控动作完成
                     self.action_complete.wait()

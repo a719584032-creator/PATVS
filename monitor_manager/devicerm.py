@@ -60,15 +60,12 @@ class Notification:
         if wparam == win32con.DBT_DEVICEREMOVECOMPLETE:
             self.cycles_count += 1
             message = f"Device {dbch.name} removed, current count: {self.cycles_count}"
-            logger.info(message)
             wx.CallAfter(self.window.add_log_message, message)
         elif wparam == win32con.DBT_DEVICEARRIVAL:
             message = f"Device {dbch.name} arrived, current count: {self.cycles_count}"
-            logger.info(message)
             wx.CallAfter(self.window.add_log_message, message)
         if self.cycles_count >= self.target_cycles:
-            message = f"Device plug/unplug cycle completed: {self.cycles_count} times"
-            logger.info(message)
+            message = f"检测到已完成设备插拔目标次数: {self.cycles_count}"
             wx.CallAfter(self.window.add_log_message, message)
             win32gui.PostQuitMessage(0)
 

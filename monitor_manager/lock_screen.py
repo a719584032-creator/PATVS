@@ -43,27 +43,24 @@ class SessionNotificationHandler:
         if msg == WM_WTSSESSION_CHANGE:  # 使用自定义的常量
             if wparam == WTS_SESSION_LOCK:
                 self.lock_count += 1
-                logger.info(f"Session is locked. Lock count: {self.lock_count}")
-                wx.CallAfter(self.window.add_log_message, f"Session is locked. Lock count: {self.lock_count}")
+                wx.CallAfter(self.window.add_log_message, f"会话已锁定. 锁屏次数: {self.lock_count}")
                 if self.lock_count >= self.target_cycles:
-                    logger.info(f"Target lock count {self.target_cycles} reached. Exiting...")
                     wx.CallAfter(self.window.add_log_message,
-                                 f"Target lock count {self.target_cycles} reached. Exiting...")
+                                 f"已完成目标锁屏次数: {self.target_cycles} ，Exiting...")
                     win32ts.WTSUnRegisterSessionNotification(self.hwnd)
                     win32gui.DestroyWindow(self.hwnd)
                     win32gui.PostQuitMessage(0)
             elif wparam == WTS_SESSION_UNLOCK:
-                logger.info("Session is unlocked.")
-                wx.CallAfter(self.window.add_log_message, "Session is unlocked.")
+                #wx.CallAfter(self.window.add_log_message, "会话已解锁")
+                pass
         return win32gui.DefWindowProc(hwnd, msg, wparam, lparam)
 
     def run(self):
-        wx.CallAfter(self.window.add_log_message, "Monitoring session lock/unlock events...")
+        wx.CallAfter(self.window.add_log_message, "开始监控电脑锁屏事件")
         try:
             win32gui.PumpMessages()
         except KeyboardInterrupt:
-            logger.warning("Monitoring stopped.")
-            wx.CallAfter(self.window.add_log_message, "Monitoring stopped.")
+            wx.CallAfter(self.window.add_log_message, "停止电脑锁屏监控.......")
             win32ts.WTSUnRegisterSessionNotification(self.hwnd)
             win32gui.DestroyWindow(self.hwnd)
             win32gui.UnregisterClass(self.class_atom, None)

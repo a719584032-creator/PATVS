@@ -541,7 +541,7 @@ class TestCasesPanel(wx.Panel):
         """向日志窗口添加消息"""
         if self.log_content:
             self.log_content.AppendText(message + '\n')  # 在文本控件的末尾添加文本
-            logger.debug(message + '\n')
+            logger.info(message + '\n')
 
     def upload_image(self, case_result, comment=None):
         # 创建文件选择对话框
