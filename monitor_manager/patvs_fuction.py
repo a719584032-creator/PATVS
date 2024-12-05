@@ -806,7 +806,7 @@ class Patvs_Fuction():
 
             # 如果达到目标周期数，退出检测
             if cycle_count >= target_cycles:
-                wx.CallAfter(self.window.add_log_message,f"摄像头开关周期数已达到目标值 ({target_cycles})，退出检测。")
+                wx.CallAfter(self.window.add_log_message, f"摄像头开关周期数已达到目标值 ({target_cycles})，退出检测。")
                 break
             # 等待一段时间后再次检测
             time.sleep(1)
@@ -913,13 +913,20 @@ class Patvs_Fuction():
                                      f"开始执行监控按键: {action}，目标测试次数: {test_num}")
                         threading.Thread(target=self.monitor_keystrokes2, args=(test_num, action,)).start()
                     elif action == '显示器':
-                        wx.CallAfter(self.window.add_log_message, f"开始执行监控: {action} 开关事件，目标测试次数: {test_num}")
+                        wx.CallAfter(self.window.add_log_message,
+                                     f"开始执行监控: {action} 开关事件，目标测试次数: {test_num}")
                         threading.Thread(target=self.monitor_display_status, args=(test_num,)).start()
                     elif action == '音量':
-                        wx.CallAfter(self.window.add_log_message, f"开始执行监控: {action} 加减事件，目标测试次数: {test_num}")
+                        wx.CallAfter(self.window.add_log_message,
+                                     f"开始执行监控: {action} 加减事件，目标测试次数: {test_num}")
                         threading.Thread(target=self.monitor_volume_changes, args=(test_num,)).start()
                     elif action == '摄像头':
-                        wx.CallAfter(self.window.add_log_message, f"开始执行监控: {action} 开关事件，目标测试次数: {test_num}")
+                        wx.CallAfter(self.window.add_log_message,
+                                     f"开始执行监控: {action} 开关事件，目标测试次数: {test_num}")
+                        threading.Thread(target=self.monitor_video_changes, args=(test_num,)).start()
+                    elif action.lower() == 'camera':
+                        wx.CallAfter(self.window.add_log_message,
+                                     f"开始执行监控: {action} 开关事件，目标测试次数: {test_num}")
                         threading.Thread(target=self.monitor_video_changes, args=(test_num,)).start()
                     # 等待当前监控动作完成
                     self.action_complete.wait()
