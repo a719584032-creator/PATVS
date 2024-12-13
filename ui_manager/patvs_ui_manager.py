@@ -271,6 +271,8 @@ class TestCasesPanel(wx.Panel):
         self.tree.Hide()
         # 初始时没有用例树数据
         self.testCases = None
+        self.plan_id = None
+        self.model_id = None
         self.sheet_id = None
         self.CaseID = None
         self.tree.Bind(wx.EVT_TREE_SEL_CHANGED, self.case_details)
@@ -544,27 +546,129 @@ class TestCasesPanel(wx.Panel):
             logger.info(message + '\n')
 
     def upload_image(self, case_result, comment=None):
-        # 创建文件选择对话框
-        with wx.FileDialog(self, "选择图片文件",
-                           wildcard="JPEG files (*.jpg;*.jpeg)|*.jpg;*.jpeg|PNG files (*.png)|*.png",
-                           style=wx.FD_OPEN | wx.FD_FILE_MUST_EXIST | wx.FD_MULTIPLE) as fileDialog:
+        """改进后的上传图片交互逻辑，支持图片预览和删除功能"""
+        dialog = wx.Dialog(self, title="上传图片", size=(800, 600))
 
-            if fileDialog.ShowModal() == wx.ID_CANCEL:
-                return  # 用户取消操作
+        # 主布局
+        main_sizer = wx.BoxSizer(wx.VERTICAL)
 
-            # 获取选择的文件路径
-            pathnames = fileDialog.GetPaths()
-            logger.warning(pathnames)
-            if len(pathnames) > 5:
-                wx.MessageBox('最多只能上传5张图片。', '提示', wx.OK | wx.ICON_WARNING)
-                return False
+        # 图片预览区域
+        preview_label = wx.StaticText(dialog, label="已选择的图片（最多 5 张）：")
+        main_sizer.Add(preview_label, 0, wx.ALL, 5)
+
+        # 使用 WrapSizer 动态排列图片预览
+        self.image_preview_sizer = wx.WrapSizer(wx.HORIZONTAL)
+        preview_panel = wx.Panel(dialog)
+        preview_panel.SetSizer(self.image_preview_sizer)
+        main_sizer.Add(preview_panel, 1, wx.ALL | wx.EXPAND, 5)
+
+        # 按钮区域
+        button_sizer = wx.BoxSizer(wx.HORIZONTAL)
+        add_button = wx.Button(dialog, label="添加图片")
+        confirm_button = wx.Button(dialog, label="确认上传")
+        cancel_button = wx.Button(dialog, label="取消")
+        button_sizer.Add(add_button, 0, wx.ALL, 5)
+        button_sizer.AddStretchSpacer()
+        button_sizer.Add(confirm_button, 0, wx.ALL, 5)
+        button_sizer.Add(cancel_button, 0, wx.ALL, 5)
+        main_sizer.Add(button_sizer, 0, wx.EXPAND)
+
+        dialog.SetSizer(main_sizer)
+
+        # 初始化已选图片列表
+        selected_files = []
+
+        def refresh_preview():
+            """刷新图片预览区域"""
+            # 清空现有预览
+            for child in self.image_preview_sizer.GetChildren():
+                child.GetWindow().Destroy()
+            self.image_preview_sizer.Clear()
+
+            # 添加每张图片的预览
+            for file_path in selected_files:
+                # 创建图片预览框
+                image_panel = wx.Panel(preview_panel, size=(150, 200))  # 每个图片预览框的固定大小
+                image_sizer = wx.BoxSizer(wx.VERTICAL)
+
+                # 加载图片并显示缩略图
+                image = wx.Image(file_path, wx.BITMAP_TYPE_ANY)
+                image = image.Scale(120, 120, wx.IMAGE_QUALITY_HIGH)  # 缩略图大小
+                bitmap = wx.StaticBitmap(image_panel, bitmap=wx.Bitmap(image))
+                image_sizer.Add(bitmap, 0, wx.ALL | wx.CENTER, 5)
+
+                # 显示文件名
+                filename = os.path.basename(file_path)
+                filename_label = wx.StaticText(image_panel, label=filename, style=wx.ALIGN_CENTER)
+                image_sizer.Add(filename_label, 0, wx.ALL | wx.CENTER, 5)
+
+                # 删除按钮
+                delete_button = wx.Button(image_panel, label="删除", size=(60, 30))
+                delete_button.Bind(wx.EVT_BUTTON, lambda evt, path=file_path: on_remove_image(evt, path))
+                image_sizer.Add(delete_button, 0, wx.ALL | wx.CENTER, 5)
+
+                image_panel.SetSizer(image_sizer)
+                self.image_preview_sizer.Add(image_panel, 0, wx.ALL, 10)
+
+            # 更新布局
+            preview_panel.Layout()
+            dialog.Layout()
+
+        def on_add_image(event):
+            """添加图片"""
+            with wx.FileDialog(dialog, "选择图片文件",
+                               wildcard="JPEG files (*.jpg;*.jpeg)|*.jpg;*.jpeg|PNG files (*.png)|*.png",
+                               style=wx.FD_OPEN | wx.FD_FILE_MUST_EXIST | wx.FD_MULTIPLE) as fileDialog:
+
+                if fileDialog.ShowModal() == wx.ID_CANCEL:
+                    return  # 用户取消操作
+
+                # 获取选择的文件路径
+                paths = fileDialog.GetPaths()
+                for path in paths:
+                    if path not in selected_files:
+                        if len(selected_files) >= 5:
+                            wx.MessageBox('最多只能上传 5 张图片。', '提示', wx.OK | wx.ICON_WARNING)
+                            break
+                        selected_files.append(path)
+
+                refresh_preview()
+
+        def on_remove_image(event, file_path):
+            """删除选中的图片"""
+            if file_path in selected_files:
+                selected_files.remove(file_path)
+                refresh_preview()  # 删除后刷新预览区域
+
+        def on_confirm_upload(event):
+            """确认上传"""
+            if not selected_files:
+                wx.MessageBox('请选择至少一张图片进行上传。', '提示', wx.OK | wx.ICON_WARNING)
+                return
+
             try:
-                # 上传文件
-                self.upload_files_to_server(pathnames, case_result, comment)
-                return True
+                # 调用上传接口
+                self.upload_files_to_server(selected_files, case_result, comment)
+             #   wx.MessageBox('图片上传成功！', '信息', wx.OK | wx.ICON_INFORMATION)
+                dialog.EndModal(wx.ID_OK)  # 上传成功后关闭对话框
             except Exception as e:
-                wx.LogError(f"无法打开文件. 错误信息: {e}")
-                return False
+                wx.MessageBox(f"图片上传失败：{e}", '错误', wx.OK | wx.ICON_ERROR)
+
+        def on_cancel(event):
+            """取消操作"""
+            dialog.EndModal(wx.ID_CANCEL)
+
+        # 绑定按钮事件
+        add_button.Bind(wx.EVT_BUTTON, on_add_image)
+        confirm_button.Bind(wx.EVT_BUTTON, on_confirm_upload)
+        cancel_button.Bind(wx.EVT_BUTTON, on_cancel)
+
+        # 显示对话框并等待用户操作
+        result = dialog.ShowModal()
+        dialog.Destroy()
+
+        # 如果用户点击确认上传返回 True，否则返回 False
+        return result == wx.ID_OK
 
     def upload_files_to_server(self, file_paths, case_result, comment=None):
         files = []

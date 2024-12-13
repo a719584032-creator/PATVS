@@ -15,6 +15,8 @@ import psutil
 import win32evtlog
 import pywintypes
 import win32evtlogutil
+import wmi
+import ctypes
 import win32con
 import pytz
 import datetime
@@ -26,6 +28,11 @@ import threading
 import win32api
 import screen_brightness_control as sbc
 import cv2
+
+
+# Windows API 常量
+MONITOR_OFF = 2  # 显示器关闭状态
+MONITOR_ON = -1  # 显示器打开状态
 
 
 class Patvs_Fuction():
@@ -319,6 +326,83 @@ class Patvs_Fuction():
             logger.error(f'{e}')
             return None
 
+    # def test_count_s4_sleep_events(self, start_time, target_cycles):
+    #     def reopen_event_log():
+    #         """尝试打开事件日志句柄，返回句柄或 None"""
+    #         try:
+    #             return win32evtlog.OpenEventLog(None, "System")
+    #         except Exception as e:
+    #             wx.CallAfter(self.window.add_log_message, f"Failed to open event log: {e}")
+    #             return None
+    #
+    #     hand = reopen_event_log()
+    #     if hand is None:
+    #         return  # 如果无法打开句柄，退出
+    #
+    #     flags = win32evtlog.EVENTLOG_FORWARDS_READ | win32evtlog.EVENTLOG_SEQUENTIAL_READ
+    #     total = 0
+    #     log_num = 0
+    #     start_time = datetime.datetime.strptime(start_time, "%Y-%m-%d %H:%M:%S")
+    #     try:
+    #         while self.stop_event:
+    #             if not hand:  # 检查句柄是否有效
+    #                 hand = reopen_event_log()
+    #                 if hand is None:
+    #                     time.sleep(1)
+    #                     continue
+    #             try:
+    #                 events = win32evtlog.ReadEventLog(hand, flags, 0)
+    #                 if not events:
+    #                     # 关闭当前句柄并重新打开
+    #                     win32evtlog.CloseEventLog(hand)
+    #                     hand = reopen_event_log()
+    #                     total = 0
+    #                     time.sleep(1)
+    #                     continue
+    #             except Exception as e:
+    #                 logger.warning(f"Error reading event log: {e}")
+    #                 if hand:
+    #                     try:
+    #                         win32evtlog.CloseEventLog(hand)
+    #                     except Exception as close_e:
+    #                         logger.warning(f"Error closing event log: {close_e}")
+    #                 hand = reopen_event_log()
+    #                 total = 0
+    #                 time.sleep(1)
+    #                 continue
+    #
+    #             for event in events:
+    #                 if event.EventID == 1:
+    #                     # 解析 EventData 获取 SleepTime 和 WakeTime
+    #                     event_data = self.get_event_data(event)
+    #                     sleep_time = None
+    #                     wake_time = None
+    #                     for line in event_data.split('\n'):
+    #                         if "睡眠时间" in line or "Sleep Time" in line:
+    #                             sleep_time = self.parse_time(line.split(": ")[1])
+    #                         elif "唤醒时间" in line or "Wake Time" in line:
+    #                             wake_time = self.parse_time(line.split(": ")[1])
+    #                     # 统计S4事件次数
+    #                     if sleep_time and wake_time:
+    #                         if sleep_time > start_time and wake_time > sleep_time:
+    #                             total += 1
+    #                             if total > log_num:  # 仅输出增量日志
+    #                                 wx.CallAfter(self.window.add_log_message,
+    #                                              f"当前已测试 {total} 次，目标次数为 {target_cycles} 次。")
+    #                                 wx.CallAfter(self.window.add_log_message,
+    #                                              f'SleepTime: {sleep_time}, WakeTime: {wake_time}')
+    #                             if total >= target_cycles:
+    #                                 wx.CallAfter(self.window.add_log_message,
+    #                                              f"已完成目标S4次数: {total}")
+    #                                 return
+    #     finally:
+    #         wx.CallAfter(self.window.add_log_message, "停止S4事件监控.")
+    #         if hand:
+    #             try:
+    #                 win32evtlog.CloseEventLog(hand)
+    #             except Exception as e:
+    #                 logger.warning(f"S4 Final close error: {e}")
+    #         self.action_complete.set()  # 设置动作完成状态
     def test_count_s4_sleep_events(self, start_time, target_cycles):
         def reopen_event_log():
             """尝试打开事件日志句柄，返回句柄或 None"""
@@ -331,7 +415,6 @@ class Patvs_Fuction():
         hand = reopen_event_log()
         if hand is None:
             return  # 如果无法打开句柄，退出
-
         flags = win32evtlog.EVENTLOG_FORWARDS_READ | win32evtlog.EVENTLOG_SEQUENTIAL_READ
         total = 0
         log_num = 0
@@ -365,29 +448,19 @@ class Patvs_Fuction():
                     continue
 
                 for event in events:
-                    if event.EventID == 1:
-                        # 解析 EventData 获取 SleepTime 和 WakeTime
-                        event_data = self.get_event_data(event)
-                        sleep_time = None
-                        wake_time = None
-                        for line in event_data.split('\n'):
-                            if "睡眠时间" in line or "Sleep Time" in line:
-                                sleep_time = self.parse_time(line.split(": ")[1])
-                            elif "唤醒时间" in line or "Wake Time" in line:
-                                wake_time = self.parse_time(line.split(": ")[1])
-                        # 统计S4事件次数
-                        if sleep_time and wake_time:
-                            if sleep_time > start_time and wake_time > sleep_time:
-                                total += 1
-                                if total > log_num:  # 仅输出增量日志
-                                    wx.CallAfter(self.window.add_log_message,
-                                                 f"当前已测试 {total} 次，目标次数为 {target_cycles} 次。")
-                                    wx.CallAfter(self.window.add_log_message,
-                                                 f'SleepTime: {sleep_time}, WakeTime: {wake_time}')
-                                if total >= target_cycles:
-                                    wx.CallAfter(self.window.add_log_message,
-                                                 f"已完成目标S4次数: {total}")
-                                    return
+                    if event.EventID == 42:
+                        occurred_time = event.TimeGenerated
+                        if occurred_time > start_time:
+                            total += 1
+                # 仅输出增量日志
+                if total > log_num:
+                    wx.CallAfter(self.window.add_log_message,
+                                 f"当前已测试 {total} 次，目标次数为 {target_cycles} 次。")
+                    log_num = total
+                if total >= target_cycles:
+                    wx.CallAfter(self.window.add_log_message,
+                                 f"已完成目标S4次数: {target_cycles}")
+                    return
         finally:
             wx.CallAfter(self.window.add_log_message, "停止S4事件监控.")
             if hand:
@@ -469,21 +542,18 @@ class Patvs_Fuction():
 
                 for event in events:
                     if event.EventID == 7001:
-                        occurred_time_str = str(event.TimeGenerated)
-                        try:
-                            occurred_time = datetime.datetime.strptime(occurred_time_str, "%Y/%m/%d %H:%M:%S")
-                        except ValueError:
-                            occurred_time = datetime.datetime.strptime(occurred_time_str, "%Y-%m-%d %H:%M:%S")
+                        occurred_time = event.TimeGenerated
                         if occurred_time > start_time:
                             total += 1
-                            # 仅输出增量日志
-                            if total > log_num:
-                                wx.CallAfter(self.window.add_log_message,
-                                             f"当前已测试 {total} 次，目标次数为 {target_cycles} 次。")
-                            if total >= target_cycles:
-                                wx.CallAfter(self.window.add_log_message,
-                                             f"已完成目标S5次数: {target_cycles}")
-                                return
+                # 仅输出增量日志
+                if total > log_num:
+                    wx.CallAfter(self.window.add_log_message,
+                                 f"当前已测试 {total} 次，目标次数为 {target_cycles} 次。")
+                    log_num = total
+                if total >= target_cycles:
+                    wx.CallAfter(self.window.add_log_message,
+                                 f"已完成目标S5次数: {target_cycles}")
+                    return
         finally:
             wx.CallAfter(self.window.add_log_message, "停止S5事件监控.")
             if hand:
@@ -539,20 +609,18 @@ class Patvs_Fuction():
                 for event in events:
                     event_id = event.EventID & 0xFFFF  # 掩码EventID以获取实际值
                     if event_id == 1074:
-                        occurred_time_str = str(event.TimeGenerated)
-                        try:
-                            occurred_time = datetime.datetime.strptime(occurred_time_str, "%Y/%m/%d %H:%M:%S")
-                        except ValueError:
-                            occurred_time = datetime.datetime.strptime(occurred_time_str, "%Y-%m-%d %H:%M:%S")
+                        occurred_time = event.TimeGenerated
                         if occurred_time > start_time:
                             total += 1
-                            if total > log_num:
-                                wx.CallAfter(self.window.add_log_message,
-                                             f"当前已测试 {total} 次，目标次数为 {target_cycles} 次。")
-                            if total >= target_cycles:
-                                wx.CallAfter(self.window.add_log_message,
-                                             f"已完成目标 restart 次数:{target_cycles} 。")
-                                return
+                # 仅输出增量日志
+                if total > log_num:
+                    wx.CallAfter(self.window.add_log_message,
+                                 f"当前已测试 {total} 次，目标次数为 {target_cycles} 次。")
+                    log_num = total
+                if total >= target_cycles:
+                    wx.CallAfter(self.window.add_log_message,
+                                 f"已完成目标 restart 次数: {target_cycles}")
+                    return
         finally:
             wx.CallAfter(self.window.add_log_message, "停止 restart 事件监控.")
             if hand:
@@ -701,32 +769,28 @@ class Patvs_Fuction():
             try:
                 # 获取当前屏幕亮度
                 current_brightness = sbc.get_brightness(display=0)  # 假设只有一个显示器
+                wx.CallAfter(self.window.add_log_message, f"当前显示器亮度: {current_brightness}")
                 if current_brightness == 0:
                     raise Exception("Brightness is 0, assuming display is off.")
 
+                # 如果亮度正常，更新状态
                 if previous_brightness is None:
                     previous_brightness = current_brightness
 
-                # 检测屏幕关闭状态
-                if current_brightness == 0:
-                    if was_display_on:
-                        off_cycle_count += 1
-                        wx.CallAfter(self.window.add_log_message, f"显示器关闭周期完成: {off_cycle_count} 次")
-                    was_display_on = False
-                else:
-                    was_display_on = True
-
-                previous_brightness = current_brightness
+                was_display_on = True  # 屏幕处于打开状态
 
             except Exception as e:
                 # 当无法获取亮度时，假定屏幕已关闭
                 wx.CallAfter(self.window.add_log_message, f"检测到屏幕已关闭: {e}")
-                if was_display_on:
+                # 仅在屏幕刚从打开变为关闭时计数
+                if was_display_on and previous_brightness:
                     off_cycle_count += 1
                     wx.CallAfter(self.window.add_log_message, f"显示器关闭周期完成: {off_cycle_count} 次")
+                # 更新状态：屏幕处于关闭状态
                 was_display_on = False
+                previous_brightness = None
 
-            time.sleep(2)  # 每2秒检测一次
+            time.sleep(5)  # 每5秒检测一次
         if self.stop_event:
             wx.CallAfter(self.window.add_log_message, "显示器开关次数已达到目标次数，退出监控。")
         else:
