@@ -518,7 +518,7 @@ class TestCaseManager:
             query = """
             SELECT SUM(te.TestTime) FROM testexecution te JOIN TestCase tc 
             ON te.CaseID = tc.CaseID 
-            WHERE tc.sheet_id=%s AND te.ModelID = %s
+            WHERE  te.ModelID = %s AND tc.sheet_id=%s
             """
             self.cursor.execute(query, (model_id, sheet_id))
             count_result = self.cursor.fetchone()
@@ -541,7 +541,7 @@ class TestCaseManager:
         query = """
         SELECT COUNT(*) FROM testexecution te JOIN TestCase tc 
         ON te.CaseID = tc.CaseID
-        WHERE tc.sheet_id = %s AND te.ModelID = %s AND te.TestResult IS NOT NULL
+        WHERE  te.ModelID = %s AND tc.sheet_id = %s AND te.TestResult IS NOT NULL
         """
         try:
             # 统计已执行的用例数量

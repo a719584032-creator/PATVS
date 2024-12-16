@@ -611,7 +611,7 @@ def validate_user():
         if valid:
             token = jwt.encode({
                 'username': username,
-                'exp': datetime.datetime.utcnow() + datetime.timedelta(hours=24)
+                'exp': datetime.datetime.utcnow() + datetime.timedelta(hours=96)
             }, app.config['SECRET_KEY'], algorithm="HS256")
             return jsonify({'token': token, 'role': role})
         else:
