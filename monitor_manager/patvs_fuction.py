@@ -1,7 +1,5 @@
 # -*- coding: utf-8 -*-
 # 负责监控逻辑
-import random
-
 import wx
 from common.logs import logger
 from monitor_manager.devicerm import Notification
@@ -9,15 +7,10 @@ from monitor_manager.lock_screen import monitor_locks
 from ctypes import cast, POINTER
 from comtypes import CLSCTX_ALL
 from pycaw.pycaw import AudioUtilities, IAudioEndpointVolume
-from pynput import mouse
 import time
 import psutil
 import win32evtlog
-import pywintypes
 import win32evtlogutil
-import wmi
-import ctypes
-import win32con
 import pytz
 import datetime
 from pynput import keyboard
@@ -25,7 +18,6 @@ from cryptography.fernet import Fernet
 import os
 import json
 import threading
-import win32api
 import screen_brightness_control as sbc
 import cv2
 

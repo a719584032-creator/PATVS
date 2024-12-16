@@ -21,9 +21,6 @@ from common.logs import logger
 import win32con
 import win32api
 from requests_manager.http_requests_manager import http_manager
-import qrcode
-from io import BytesIO
-from PIL import Image
 import wx.lib.newevent
 import webbrowser
 
