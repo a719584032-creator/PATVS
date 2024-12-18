@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 # 负责主界面展示
 import wx
+import winreg as reg
 from ui_manager.patvs_ui_manager import TestCasesPanel
 from ui_manager.patvs_admin_ui_manager import TestAdminPanel
 from common.logs import logger
@@ -15,10 +16,49 @@ if not os.path.exists(directory):
     os.makedirs(directory)
 file_dir = directory + '/credentials.json'
 
+
 def resource_path(relative_path):
     """ Get absolute path to resource, works for dev and for PyInstaller """
     base_path = getattr(sys, '_MEIPASS', os.path.dirname(os.path.abspath(__file__)))
     return os.path.join(base_path, relative_path)
+
+
+def is_in_startup(app_name):
+    """
+    检测程序是否已在开机自启动中
+    :param app_name: 程序名称（注册表中的键名）
+    :return: True 如果已设置为开机启动，否则 False
+    """
+    try:
+        key = r"Software\Microsoft\Windows\CurrentVersion\Run"
+        reg_key = reg.OpenKey(reg.HKEY_CURRENT_USER, key, 0, reg.KEY_READ)
+        # 尝试获取注册表中的值
+        value, _ = reg.QueryValueEx(reg_key, app_name)
+        reg.CloseKey(reg_key)
+        # 检查路径是否一致
+        if value == os.path.abspath(sys.argv[0]):
+            return True
+    except FileNotFoundError:
+        # 如果找不到键值，说明未设置
+        return False
+    return False
+
+
+def add_to_startup(app_name):
+    """
+    将程序添加到开机自启动
+    :param app_name: 程序名称（注册表中的键名）
+    """
+    try:
+        exe_path = os.path.abspath(sys.argv[0])  # 当前程序路径
+        key = r"Software\Microsoft\Windows\CurrentVersion\Run"
+        reg_key = reg.OpenKey(reg.HKEY_CURRENT_USER, key, 0, reg.KEY_SET_VALUE)
+        # 写入注册表
+        reg.SetValueEx(reg_key, app_name, 0, reg.REG_SZ, exe_path)
+        reg.CloseKey(reg_key)
+        logger.info(f"[成功] 已将程序 '{app_name}' 添加到开机自启动")
+    except Exception as e:
+        logger.error(f"[失败] 无法添加到开机自启动: {e}")
 
 
 class LoginDialog(wx.Dialog):
@@ -176,6 +216,13 @@ class ChangePasswordDialog(wx.Dialog):
 
 class MainApp(wx.App):
     def OnInit(self):
+        # 检查是否已设置为开机启动
+        app_name = "Test_Tracking_System"
+        if not is_in_startup(app_name):
+            logger.info("检测到程序未设置为开机启动，正在添加...")
+            add_to_startup(app_name)
+            wx.MessageBox("程序已成功设置为开机自启动", "提示", wx.OK | wx.ICON_INFORMATION)
+
         login_dialog = LoginDialog(None, title="PATVS-测试管理系统")
         if login_dialog.ShowModal() == wx.ID_OK:
             username = login_dialog.logged_in_username
@@ -185,7 +232,7 @@ class MainApp(wx.App):
             if role == 'admin':
                 frame = AdminWindow(None, title="Test Tracking System-Admin", username=username, token=token)
             else:
-                frame = MainWindow(None, title="Test Tracking System-2.0.0", username=username, token=token)
+                frame = MainWindow(None, title="Test Tracking System-2.0.1", username=username, token=token)
 
             self.SetTopWindow(frame)
             frame.Show(True)

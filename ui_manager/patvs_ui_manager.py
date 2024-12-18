@@ -826,7 +826,9 @@ class TestCasesPanel(wx.Panel):
         :return:
         """
         self.status_button.Disable()
+        self.project_name_combo.Disable()
         self.plan_name_combo.Disable()
+        self.model_name_combo.Disable()
         self.sheet_name_combo.Disable()
         self.tree.Disable()
         self.start_button.Hide()
@@ -843,7 +845,9 @@ class TestCasesPanel(wx.Panel):
         """
         self.status_button.Enable()
         self.tree.Enable()
+        self.project_name_combo.Enable()
         self.plan_name_combo.Enable()
+        self.model_name_combo.Enable()
         self.sheet_name_combo.Enable()
         self.start_button.Show()
         for button in self.result_buttons:
