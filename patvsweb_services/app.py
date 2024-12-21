@@ -771,8 +771,8 @@ def upload_image(current_user):
             if not hasattr(image_file, 'read'):
                 logger.error("One of the image_files is not a file-like object")
                 continue
-
-            original_filename = secure_filename(image_file.filename)
+            # 保留原文件名
+            original_filename = image_file.filename
             timestamp = int(time.time())
             unique_filename = f"{timestamp}_{original_filename}"
 
