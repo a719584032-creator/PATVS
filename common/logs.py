@@ -7,9 +7,10 @@ import sys
 from loguru import logger as _logger
 import os
 from datetime import datetime
+from config_manager.config import env_config
 
 # 定义一个变量来标记是否在服务器上运行
-IS_SERVER = False
+IS_SERVER = env_config.global_setting.is_server
 # 获取当前日期，格式为 YYYY-MM-DD
 current_date = datetime.now().strftime('%Y%m%d')
 if IS_SERVER:

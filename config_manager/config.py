@@ -2,7 +2,6 @@
 import os
 from attr import attrs, attrib
 from dotenv import load_dotenv
-from common.logs import logger
 from common.meta_class import MetaSingleton
 from common.tools import Public
 
@@ -12,6 +11,9 @@ class _GlobalSetting(object):
     # 主url
     protocol = attrib(default='', type=str)
     domain = attrib(default='', type=str)
+    port = attrib(default='', type=str)
+    is_server = attrib(default=False, type=bool)
+    is_debug = attrib(default=True, type=bool)
     db_host = attrib(default='', type=str)
     db_user = attrib(default='', type=str)
     db_password = attrib(default='', type=str)
@@ -29,11 +31,14 @@ class _GlobalSetting(object):
     def init_from_env(self):
         self.protocol = os.getenv("GLOBAL_SETTING_PROTOCOL")
         self.domain = os.getenv("GLOBAL_SETTING_HOST")
+        self.port = os.getenv("GLOBAL_SETTING_PORT")
         self.db_host = os.getenv("DB_HOST")
         self.db_user = os.getenv("DB_USER")
         self.db_password = os.getenv("DB_PASSWORD")
         self.db_database = os.getenv("DB_DATABASE")
         self.db_buffered = bool(os.getenv("DB_BUFFERED"))
+        self.is_server = bool(os.getenv("IS_SERVER"))
+        self.is_debug = bool(os.getenv("IS_DEBUG"))
         self.aws_user_id = os.getenv("AWS_USER_ID")
         self.aws_access_key = os.getenv("AWS_ACCESS_KEY")
         self.aws_secret_key = os.getenv("AWS_SECRET_KEY")
@@ -66,9 +71,9 @@ env_config = EnvConfig()
 
 if __name__ == "__main__":
     cfg = EnvConfig()
-    logger.info(f"test env config: {default_cfg_path}")
-    logger.info(f"protocol: {cfg.global_setting.protocol}")
-    logger.info(f"password: {cfg.global_setting.aws_user_id}")
-    logger.info(f"domain: {cfg.global_setting.domain}")
-    logger.info(f"domain: {cfg.global_setting.db_buffered}")
-    logger.info(type(cfg.global_setting.db_buffered))
+    print(f"test env config: {default_cfg_path}")
+    print(f"protocol: {cfg.global_setting.protocol}")
+    print(f"password: {cfg.global_setting.aws_user_id}")
+    print(f"domain: {cfg.global_setting.domain}")
+    print(f"domain: {cfg.global_setting.db_buffered}")
+    print(type(cfg.global_setting.db_buffered))

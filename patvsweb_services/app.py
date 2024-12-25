@@ -15,9 +15,11 @@ from config_manager.config import env_config
 from mysql.connector.pooling import MySQLConnectionPool
 from patvsweb_services.sql_manager import TestCaseManager
 from functools import wraps
-from werkzeug.utils import secure_filename
+from werkzeug.middleware.proxy_fix import ProxyFix
+
 
 app = Flask(__name__)
+app.wsgi_app = ProxyFix(app.wsgi_app, x_proto=1, x_host=1)
 app.config['SECRET_KEY'] = 'lenovo_secret_key'
 
 # 配置S3存储桶
@@ -1043,4 +1045,4 @@ def serve_file(filename):
 
 
 if __name__ == '__main__':
-    app.run(debug=True, host='127.0.0.1', port=80)
+    app.run(debug=env_config.global_setting.is_debug, host=env_config.global_setting.domain, port=env_config.global_setting.port)
