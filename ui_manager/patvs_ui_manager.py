@@ -677,6 +677,7 @@ class TestCasesPanel(wx.Panel):
         data = {'case_id': self.CaseID, 'model_id': self.model_id, 'case_result': case_result, 'comment': comment}
         logger.warning(files)
         try:
+
             response = http_manager.post_file('/upload-images', files=files, data=data, token=self.token)
             if response.status_code == 200:
                 wx.MessageBox('图片上传成功！', '信息', wx.OK | wx.ICON_INFORMATION)

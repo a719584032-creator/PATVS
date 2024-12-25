@@ -11,14 +11,14 @@ from datetime import datetime
 # 定义一个变量来标记是否在服务器上运行
 IS_SERVER = False
 # 获取当前日期，格式为 YYYY-MM-DD
-current_date = datetime.now().strftime('%Y-%m-%d')
+current_date = datetime.now().strftime('%Y%m%d')
 if IS_SERVER:
-    directory = f"/tmp/PATVS/{current_date}"
+    directory = f"/tmp/patvs/{current_date}"
 else:
     directory = f"C:\\PATVS\\{current_date}"
 if not os.path.exists(directory):
     os.makedirs(directory)
-    os.chmod(directory, 0o755)  # 设置目录权限为可读写
+    os.chmod(directory, 0o777)  # 设置目录权限为可读写
 
 
 # 函数用于检查是否是控制台
@@ -53,8 +53,8 @@ class Log(object):
     @classmethod
     def get_logger(cls):
         if cls.__logger is None:
-            if is_console() or IS_SERVER:
-                # 如果在控制台或服务器运行，输出到控制台
+            if is_console():
+                # 如果在控制台运行，输出到控制台
                 cls._config["handlers"].append({
                     "sink": sys.stdout,
                     "format": "<green>{time:YYYY-MM-DD HH:mm:ss.SSS}</green> | "
@@ -62,7 +62,7 @@ class Log(object):
                               "<cyan>{name}</cyan>:<cyan>{function}</cyan>:<cyan>{line}</cyan> - <level>{message}</level>",
                     "level": "INFO"
                 })
-            else:
+            if IS_SERVER:
                 # 如果是在服务器运行，输出到文件
                 cls._config["handlers"].append({
                     "sink": f"{directory}/patvs.log",

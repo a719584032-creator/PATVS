@@ -9,7 +9,7 @@ import datetime
 import re
 import uuid
 import time
-from flask import Flask, request, jsonify
+from flask import Flask, request, jsonify, send_file
 from common.logs import logger
 from config_manager.config import env_config
 from mysql.connector.pooling import MySQLConnectionPool
@@ -748,6 +748,78 @@ def generate_unique_filename(original_filename):
     return unique_filename
 
 
+# @app.route('/upload-images', methods=['POST'])
+# @token_required
+# def upload_image(current_user):
+#     image_files = request.files.getlist('image_files')
+#     case_id = request.form.get('case_id')
+#     model_id = request.form.get('model_id')
+#     case_result = request.form.get('case_result')
+#     comment = request.form.get('comment', None)
+#
+#     if not case_id or not model_id or not case_result or not image_files:
+#         return jsonify({'error': 'case_id, model_id, case_result and image files are required'}), 400
+#
+#     conn = get_db_connection()
+#     cursor = conn.cursor()
+#     manager = TestCaseManager(conn, cursor)
+#
+#     try:
+#         images_data = []
+#
+#         for image_file in image_files:
+#             if not hasattr(image_file, 'read'):
+#                 logger.error("One of the image_files is not a file-like object")
+#                 continue
+#             # 保留原文件名
+#             original_filename = image_file.filename
+#             timestamp = int(time.time())
+#             unique_filename = f"{timestamp}_{original_filename}"
+#
+#             today = datetime.datetime.now().strftime("%Y-%m-%d")
+#             s3_key = f"{case_id}/{today}/{unique_filename}"
+#
+#             mime_type = image_file.mimetype
+#             image_file.seek(0, os.SEEK_END)
+#             file_size = image_file.tell()
+#             image_file.seek(0)
+#
+#             # 上传文件到S3
+#             try:
+#                 s3.upload_fileobj(
+#                     image_file,
+#                     BUCKET_NAME,
+#                     s3_key,
+#                     ExtraArgs={'ContentType': mime_type}
+#                 )
+#                 logger.info(f"Uploaded file: {original_filename} to S3 with key: {s3_key}")
+#             except Exception as e:
+#                 logger.error(f"Failed to upload to S3: {e}")
+#                 return jsonify({'error': 'Failed to upload to S3'}), 500
+#
+#             # 准备图片数据
+#             image_data = {
+#                 'original_file_name': original_filename,
+#                 'stored_file_name': unique_filename,
+#                 'file_path': s3_key,
+#                 'file_size': file_size,
+#                 'mime_type': mime_type
+#             }
+#             images_data.append(image_data)
+#
+#         # 插入执行记录和所有图片信息
+#         try:
+#             execution_id = manager.insert_execution_with_image(case_id, model_id, case_result, images_data, comment)
+#             conn.commit()
+#             return jsonify({'execution_id': execution_id, 'uploaded_images': images_data}), 200
+#         except Exception as e:
+#             logger.error(f"Failed to insert execution and image records: {e}")
+#             conn.rollback()
+#             return jsonify({'error': 'Failed to insert execution and image records'}), 500
+#
+#     finally:
+#         cursor.close()
+#         conn.close()
 @app.route('/upload-images', methods=['POST'])
 @token_required
 def upload_image(current_user):
@@ -766,42 +838,43 @@ def upload_image(current_user):
 
     try:
         images_data = []
+        # 定义存储文件的根目录为 /data
+        upload_root = env_config.global_setting.image_path
 
         for image_file in image_files:
             if not hasattr(image_file, 'read'):
                 logger.error("One of the image_files is not a file-like object")
                 continue
+
             # 保留原文件名
             original_filename = image_file.filename
             timestamp = int(time.time())
             unique_filename = f"{timestamp}_{original_filename}"
 
             today = datetime.datetime.now().strftime("%Y-%m-%d")
-            s3_key = f"{case_id}/{today}/{unique_filename}"
+            # 构建文件存储路径
+            directory_path = os.path.join(upload_root, case_id, today)
+            os.makedirs(directory_path, exist_ok=True)  # 如果目录不存在则创建
+            file_path = os.path.join(directory_path, unique_filename)
 
             mime_type = image_file.mimetype
             image_file.seek(0, os.SEEK_END)
             file_size = image_file.tell()
             image_file.seek(0)
 
-            # 上传文件到S3
+            # 将文件保存到 /data 分区
             try:
-                s3.upload_fileobj(
-                    image_file,
-                    BUCKET_NAME,
-                    s3_key,
-                    ExtraArgs={'ContentType': mime_type}
-                )
-                logger.info(f"Uploaded file: {original_filename} to S3 with key: {s3_key}")
+                image_file.save(file_path)
+                logger.info(f"Saved file: {original_filename} to {file_path}")
             except Exception as e:
-                logger.error(f"Failed to upload to S3: {e}")
-                return jsonify({'error': 'Failed to upload to S3'}), 500
+                logger.error(f"Failed to save file to server: {e}")
+                return jsonify({'error': 'Failed to save file to server'}), 500
 
             # 准备图片数据
             image_data = {
                 'original_file_name': original_filename,
                 'stored_file_name': unique_filename,
-                'file_path': s3_key,
+                'file_path': file_path,
                 'file_size': file_size,
                 'mime_type': mime_type
             }
@@ -820,7 +893,6 @@ def upload_image(current_user):
     finally:
         cursor.close()
         conn.close()
-
 
 @app.route('/get_execution_ids', methods=['POST'])
 @token_required
@@ -843,6 +915,67 @@ def get_execution_ids(current_user):
         return jsonify({'error': 'Failed to select executionids'}), 500
 
 
+# @app.route('/get_images/<int:execution_id>', methods=['GET'])
+# def get_images(execution_id):
+#     if not execution_id:
+#         return jsonify({'error': 'execution_id is required'}), 400
+#
+#     conn = get_db_connection()
+#     cursor = conn.cursor()
+#     manager = TestCaseManager(conn, cursor)
+#     try:
+#         # 查询数据库获取图片信息
+#         images = manager.select_images_by_execution_id(execution_id)
+#         if not images:
+#             return jsonify({'error': 'No images found for the given execution_id'}), 404
+#
+#         # 构建返回的图片信息列表，包括预签名 URL
+#         images_data = []
+#         for image in images:
+#             file_path = image[3]
+#             presigned_url = generate_presigned_url(file_path)
+#
+#             if not presigned_url:
+#                 logger.error(f"Failed to generate presigned URL for {file_path}")
+#                 continue
+#
+#             image_info = {
+#                 'original_file_name': image[2],
+#                 'stored_file_name': image[7],
+#                 'file_path': file_path,
+#                 'file_size': image[4],
+#                 'mime_type': image[5],
+#                 'time': image[6].strftime('%Y-%m-%d %H:%M:%S') if image[6] else None,
+#                 'url': presigned_url  # 添加预签名 URL
+#             }
+#             images_data.append(image_info)
+#
+#         logger.info(images_data)
+#         return jsonify({'execution_id': execution_id, 'images': images_data}), 200
+#
+#     except Exception as e:
+#         logger.error(f"Failed to retrieve images: {e}")
+#         return jsonify({'error': 'Failed to retrieve images'}), 500
+#
+#     finally:
+#         cursor.close()
+#         conn.close()
+#
+#
+# def generate_presigned_url(object_key, expiration=604800):  # 默认一周有效
+#     try:
+#         url = s3.generate_presigned_url('get_object',
+#                                         Params={
+#                                             'Bucket': BUCKET_NAME,
+#                                             'Key': object_key,
+#                                             'ResponseContentType': 'image/jpeg',  # 根据实际情况调整 MIME 类型
+#                                             'ResponseContentDisposition': 'inline'  # 设置为 inline 以便浏览器预览
+#                                         },
+#                                         ExpiresIn=expiration)
+#         return url
+#     except Exception as e:
+#         logger.error(f"Error generating presigned URL: {e}")
+#         return None
 @app.route('/get_images/<int:execution_id>', methods=['GET'])
 def get_images(execution_id):
     if not execution_id:
@@ -857,16 +990,21 @@ def get_images(execution_id):
         if not images:
             return jsonify({'error': 'No images found for the given execution_id'}), 404
 
-        # 构建返回的图片信息列表，包括预签名 URL
+        # 从配置文件中获取存储路径
+        upload_root = env_config.global_setting.image_path
+
+        # 构建返回的图片信息列表，包括文件访问路径
         images_data = []
         for image in images:
-            file_path = image[3]
-            presigned_url = generate_presigned_url(file_path)
-
-            if not presigned_url:
-                logger.error(f"Failed to generate presigned URL for {file_path}")
+            file_path = image[3]  # 数据库中存储的文件路径
+            if not os.path.exists(file_path):  # 检查文件是否存在
+                logger.error(f"File not found: {file_path}")
                 continue
 
+            # 计算文件的相对路径
+            relative_path = os.path.relpath(file_path, upload_root)
+
+            # 构建图片信息
             image_info = {
                 'original_file_name': image[2],
                 'stored_file_name': image[7],
@@ -874,7 +1012,7 @@ def get_images(execution_id):
                 'file_size': image[4],
                 'mime_type': image[5],
                 'time': image[6].strftime('%Y-%m-%d %H:%M:%S') if image[6] else None,
-                'url': presigned_url  # 添加预签名 URL
+                'url': request.host_url + 'uploads/' + relative_path  # 构建访问 URL
             }
             images_data.append(image_info)
 
@@ -890,20 +1028,18 @@ def get_images(execution_id):
         conn.close()
 
 
-def generate_presigned_url(object_key, expiration=604800):  # 默认一周有效
-    try:
-        url = s3.generate_presigned_url('get_object',
-                                        Params={
-                                            'Bucket': BUCKET_NAME,
-                                            'Key': object_key,
-                                            'ResponseContentType': 'image/jpeg',  # 根据实际情况调整 MIME 类型
-                                            'ResponseContentDisposition': 'inline'  # 设置为 inline 以便浏览器预览
-                                        },
-                                        ExpiresIn=expiration)
-        return url
-    except Exception as e:
-        logger.error(f"Error generating presigned URL: {e}")
-        return None
+# 提供静态文件服务
+@app.route('/uploads/<path:filename>', methods=['GET'])
+def serve_file(filename):
+    # 基于 /data/uploads 提供文件服务
+    upload_root = env_config.global_setting.image_path
+    file_path = os.path.join(upload_root, filename)
+
+    if not os.path.exists(file_path):
+        return jsonify({'error': 'File not found'}), 404
+
+    # 返回文件内容
+    return send_file(file_path)
 
 
 if __name__ == '__main__':
