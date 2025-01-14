@@ -15,7 +15,46 @@ class TestCaseManager:
         self.cursor = cursor
 
     def update_start_time_by_case_id(self, case_id, model_id, start_time):
-        # 查询是否存在与 CaseID 和 ModelID 对应的 ExecutionID
+        # 根据 case_id 查询 case_title
+        self.cursor.execute(
+            """
+            SELECT CaseTitle 
+            FROM testcase 
+            WHERE CaseID = %s
+            """,
+            (case_id,)
+        )
+        case_title = self.cursor.fetchone()
+        if not case_title:
+            raise logger.error(f"未找到对应的用例标题，CaseID: {case_id}")
+        case_title = case_title[0]
+
+        # 判断标题是否包含 {b}
+        if '{b}' in case_title:
+            # 获取与当前用例相关的所有机型（ModelID）
+            self.cursor.execute(
+                """
+                SELECT tm.ModelID 
+                FROM testplanmodel tm
+                JOIN testsheet ts ON tm.PlanID = ts.plan_id
+                JOIN testcase tc ON tc.sheet_id = ts.id
+                WHERE tc.CaseID = %s
+                """,
+                (case_id,)
+            )
+            model_ids = [row[0] for row in self.cursor.fetchall()]
+
+            # 为每个机型插入或更新记录
+            for model_id_item in model_ids:
+                self._process_start_time(case_id, model_id_item, start_time)
+        else:
+            # 原有逻辑
+            self._process_start_time(case_id, model_id, start_time)
+
+    def _process_start_time(self, case_id, model_id, start_time):
+        """
+        处理单个机型的 start_time 更新或插入逻辑
+        """
         self.cursor.execute(
             """
             SELECT ExecutionID FROM testexecution 
@@ -46,13 +85,53 @@ class TestCaseManager:
                 """,
                 (start_time, case_id, model_id)
             )
-            logger.info("插入成功")
+            logger.info(f"插入成功，CaseID: {case_id}, ModelID: {model_id}")
 
     def update_end_time_case_id(self, case_id, model_id, case_result, comment=None):
+        # 根据 case_id 查询 case_title
+        self.cursor.execute(
+            """
+            SELECT CaseTitle 
+            FROM testcase 
+            WHERE CaseID = %s
+            """,
+            (case_id,)
+        )
+        case_title = self.cursor.fetchone()
+        if not case_title:
+            raise logger.error(f"未找到对应的用例标题，CaseID: {case_id}")
+        case_title = case_title[0]
+
+        # 判断标题是否包含 {b}
+        if '{b}' in case_title:
+            # 获取与当前用例相关的所有机型（ModelID）
+            self.cursor.execute(
+                """
+                SELECT tm.ModelID 
+                FROM testplanmodel tm
+                JOIN testsheet ts ON tm.PlanID = ts.plan_id
+                JOIN testcase tc ON tc.sheet_id = ts.id
+                WHERE tc.CaseID = %s
+                """,
+                (case_id,)
+            )
+            model_ids = [row[0] for row in self.cursor.fetchall()]
+
+            # 为每个机型更新或插入结果
+            for model_id_item in model_ids:
+                self._process_end_time(case_id, model_id_item, case_result, comment)
+        else:
+            # 原有逻辑
+            self._process_end_time(case_id, model_id, case_result, comment)
+
+    def _process_end_time(self, case_id, model_id, case_result, comment):
+        """
+        处理单个机型的 end_time 更新或插入逻辑
+        """
         # 查询执行记录
         result = self.select_start_time(model_id, case_id)
         if result is None:
-            raise logger.error("未找到匹配的测试执行记录")
+            raise logger.error(f"未找到匹配的测试执行记录，CaseID: {case_id}, ModelID: {model_id}")
 
         # 获取ExecutionID
         self.cursor.execute(
@@ -61,7 +140,7 @@ class TestCaseManager:
         )
         execution_id = self.cursor.fetchone()
         if execution_id is None:
-            raise logger.error("无法获取执行的 ExecutionID")
+            raise logger.error(f"无法获取执行的 ExecutionID，CaseID: {case_id}, ModelID: {model_id}")
 
         # 计算测试耗时
         now = datetime.now()
@@ -83,7 +162,7 @@ class TestCaseManager:
                 "INSERT INTO TestCaseComments (ExecutionID, Comment, CommentTime) VALUES (%s, %s, %s)",
                 (execution_id[0], comment, formatted_now)
             )
-            # 重新计算 FailCount
+            # 重新计算 FailCount 和 BlockCount
             self.cursor.execute(
                 "SELECT Comment FROM TestCaseComments WHERE ExecutionID = %s",
                 (execution_id[0],)
@@ -459,7 +538,7 @@ class TestCaseManager:
             logger.info("未找到匹配的测试结果")
             return None
 
-    def reset_case_by_execution_id(self, execution_id):
+    def _reset_case_by_execution_id(self, execution_id):
         """
         重置用例状态
         """
@@ -471,6 +550,46 @@ class TestCaseManager:
                 StartTime = NULL
             WHERE ExecutionID = %s
         """, (execution_id,))
+
+
+    def reset_case_by_execution_id(self, execution_id):
+        """
+        重置用例状态
+        """
+        # 根据 execution_id 查询 case_title
+        self.cursor.execute(
+            """
+            SELECT tc.CaseTitle, tc.CaseID 
+            FROM testcase tc 
+            JOIN testexecution te ON tc.CaseID = te.CaseID
+            WHERE te.ExecutionID = %s
+            """,
+            (execution_id,)
+        )
+        result = self.cursor.fetchone()
+        if not result:
+            raise logger.error(f"未找到对应的用例标题，ExecutionID: {execution_id}")
+        case_title, case_id = result
+
+        if '{b}' in case_title.lower():
+            # 获取当前 CaseID 所有的 ExecutionID
+            self.cursor.execute(
+                """
+                SELECT ExecutionID 
+                FROM testexecution 
+                WHERE CaseID = %s
+                """,
+                (case_id,)
+            )
+            execution_ids = [row[0] for row in self.cursor.fetchall()]
+
+            # 针对所有 ExecutionID 执行重置逻辑
+            for exec_id in execution_ids:
+                self._reset_case_by_execution_id(exec_id)
+        else:
+            # 如果标题不包含 {b}，只重置当前 ExecutionID
+            self._reset_case_by_execution_id(execution_id)
+
 
     def count_case_by_sheet_id(self, sheet_id):
         """
@@ -737,7 +856,7 @@ class TestCaseManager:
             self.cursor.execute(
                 "SELECT COUNT(*) FROM TestCase WHERE sheet_id IN (SELECT id FROM TestSheet WHERE plan_id=%s)",
                 (plan_id,)
-                )
+            )
             case_count_result = self.cursor.fetchone()
             case_count = case_count_result[0] if case_count_result else 0
 
@@ -1007,19 +1126,59 @@ class TestCaseManager:
         return image_id
 
     def insert_execution_with_image(self, case_id, model_id, case_result, images_data, comment=None):
+        # 根据 case_id 查询 case_title
+        self.cursor.execute(
+            """
+            SELECT CaseTitle 
+            FROM testcase 
+            WHERE CaseID = %s
+            """,
+            (case_id,)
+        )
+        case_title = self.cursor.fetchone()
+        if not case_title:
+            raise logger.error(f"未找到对应的用例标题，CaseID: {case_id}")
+        case_title = case_title[0]
+
+        # 判断标题是否包含 {b}（兼容大小写）
+        if '{b}' in case_title.lower():
+            # 获取与当前用例相关的所有机型（ModelID）
+            self.cursor.execute(
+                """
+                SELECT tm.ModelID 
+                FROM testplanmodel tm
+                JOIN testsheet ts ON tm.PlanID = ts.plan_id
+                JOIN testcase tc ON tc.sheet_id = ts.id
+                WHERE tc.CaseID = %s
+                """,
+                (case_id,)
+            )
+            model_ids = [row[0] for row in self.cursor.fetchall()]
+
+            # 针对所有相关的 ModelID 执行逻辑
+            for model_id_item in model_ids:
+                self._process_execution_with_image(case_id, model_id_item, case_result, images_data, comment)
+        else:
+            # 单机型逻辑
+            self._process_execution_with_image(case_id, model_id, case_result, images_data, comment)
+
+    def _process_execution_with_image(self, case_id, model_id, case_result, images_data, comment):
+        """
+        处理单个机型的测试执行记录插入/更新逻辑（包括图片和评论）
+        """
         # 查询执行记录
         result = self.select_start_time(model_id, case_id)
         if result is None:
-            raise logger.error("未找到匹配的测试执行记录")
+            raise logger.error(f"未找到匹配的测试执行记录，CaseID: {case_id}, ModelID: {model_id}")
 
-        # 获取ExecutionID
+        # 获取 ExecutionID
         self.cursor.execute(
             "SELECT ExecutionID FROM testexecution WHERE CaseID = %s AND ModelID = %s",
             (case_id, model_id)
         )
         execution_id = self.cursor.fetchone()
         if execution_id is None:
-            raise logger.error("无法获取执行的 ExecutionID")
+            raise logger.error(f"无法获取执行的 ExecutionID，CaseID: {case_id}, ModelID: {model_id}")
 
         # 计算测试耗时
         now = datetime.now()
@@ -1034,6 +1193,7 @@ class TestCaseManager:
             "UPDATE testexecution SET EndTime = %s, TestTime = %s, TestResult = %s WHERE ExecutionID = %s",
             (formatted_now, test_time, case_result, execution_id[0])
         )
+
         # 插入评论
         if comment:
             logger.warning("开始插入评论................................")
@@ -1041,30 +1201,42 @@ class TestCaseManager:
                 "INSERT INTO TestCaseComments (ExecutionID, Comment, CommentTime) VALUES (%s, %s, %s)",
                 (execution_id[0], comment, formatted_now)
             )
-            # 重新计算 FailCount
+            # 重新计算 FailCount 和 BlockCount
             self.cursor.execute(
                 "SELECT Comment FROM TestCaseComments WHERE ExecutionID = %s",
                 (execution_id[0],)
             )
             comments = [row[0] for row in self.cursor.fetchall()]
-            logger.warning(comments)
-            fail_count = sum(c.count('Fail') for c in comments)
-            block_count = sum(c.count('Block') for c in comments)
+            logger.warning(f"所有评论: {comments}")
+            fail_count = sum(c.lower().count('fail') for c in comments)
+            block_count = sum(c.lower().count('block') for c in comments)
 
-            # 更新 FailCount 字段
+            # 更新 FailCount 和 BlockCount 字段
             self.cursor.execute(
                 "UPDATE testexecution SET FailCount = %s, BlockCount = %s WHERE ExecutionID = %s",
                 (fail_count, block_count, execution_id[0])
             )
-            logger.warning("插入结束................................")
+            logger.warning("插入评论结束................................")
+
         # 插入 testcase_image 表
         for image_data in images_data:
             self.cursor.execute(
-                "INSERT INTO testcase_image (ExecutionID, OriginalFileName, StoredFileName, FilePath, FileSize, MimeType, UploadDate) VALUES (%s, %s, %s, %s, %s, %s, %s)",
-                (execution_id[0], image_data['original_file_name'], image_data['stored_file_name'],
-                 image_data['file_path'], image_data['file_size'], image_data['mime_type'], formatted_now)
+                """
+                INSERT INTO testcase_image 
+                (ExecutionID, OriginalFileName, StoredFileName, FilePath, FileSize, MimeType, UploadDate) 
+                VALUES (%s, %s, %s, %s, %s, %s, %s)
+                """,
+                (
+                    execution_id[0],
+                    image_data['original_file_name'],
+                    image_data['stored_file_name'],
+                    image_data['file_path'],
+                    image_data['file_size'],
+                    image_data['mime_type'],
+                    formatted_now
+                )
             )
-        logger.info(f"插入成功，ExecutionID: {execution_id[0]}")
+        logger.info(f"图片插入成功，ExecutionID: {execution_id[0]}")
 
         return execution_id[0]
 

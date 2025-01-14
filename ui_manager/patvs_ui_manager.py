@@ -131,7 +131,7 @@ class TestCasesPanel(wx.Panel):
         self.project_name_combo = wx.ComboBox(self)
         self.project_name_combo.SetMinSize(wx.Size(150, -1))
         self.project_name_combo.Bind(wx.EVT_COMBOBOX, self.on_project_select)
-        self.project_name_combo.Bind(wx.EVT_MOTION, self.on_project_hover) # 鼠标悬停时动态加载数据
+        self.project_name_combo.Bind(wx.EVT_MOTION, self.on_project_hover)  # 鼠标悬停时动态加载数据
 
         self.plan_name_combo = wx.ComboBox(self)
         self.plan_name_combo.SetMinSize(wx.Size(fixed_width, -1))
@@ -614,7 +614,7 @@ class TestCasesPanel(wx.Panel):
         def on_add_image(event):
             """添加图片"""
             with wx.FileDialog(dialog, "选择图片文件",
-                               wildcard="JPEG files (*.jpg;*.jpeg)|*.jpg;*.jpeg|PNG files (*.png)|*.png",
+                               wildcard="PNG files (*.png)|*.png|JPEG files (*.jpg;*.jpeg)|*.jpg;*.jpeg",
                                style=wx.FD_OPEN | wx.FD_FILE_MUST_EXIST | wx.FD_MULTIPLE) as fileDialog:
 
                 if fileDialog.ShowModal() == wx.ID_CANCEL:
@@ -646,7 +646,7 @@ class TestCasesPanel(wx.Panel):
             try:
                 # 调用上传接口
                 self.upload_files_to_server(selected_files, case_result, comment)
-             #   wx.MessageBox('图片上传成功！', '信息', wx.OK | wx.ICON_INFORMATION)
+                #   wx.MessageBox('图片上传成功！', '信息', wx.OK | wx.ICON_INFORMATION)
                 dialog.EndModal(wx.ID_OK)  # 上传成功后关闭对话框
             except Exception as e:
                 wx.MessageBox(f"图片上传失败：{e}", '错误', wx.OK | wx.ICON_ERROR)
@@ -1103,7 +1103,8 @@ class TestCasesPanel(wx.Panel):
     def on_reset_click(self, evt, execution_id):
         #  row, col = evt.GetRow(), evt.GetCol()
         """处理重置按钮点击事件"""
-        case_result = http_manager.get_params(f'/get_case_result', params={"execution_id": execution_id}).get('case_result')
+        case_result = http_manager.get_params(f'/get_case_result', params={"execution_id": execution_id}).get(
+            'case_result')
         if case_result:
             case_id = None
             for case in self.testCases:
@@ -1228,7 +1229,7 @@ class TestCasesPanel(wx.Panel):
         """
         排列工具生成器
         """
-        dlg = PermutationDialog(self, "排列生成工具")
+        dlg = PermutationDialog(self, "排列生成工具", self.userid, self.token)
         dlg.ShowModal()
         dlg.Destroy()
 
@@ -1383,8 +1384,10 @@ class PermutationDialog(wx.Dialog):
     排列工具
     """
 
-    def __init__(self, parent, title):
-        super().__init__(parent, title=title, size=(450, 300))
+    def __init__(self, parent, title, userid, token):
+        super().__init__(parent, title=title, size=(450, 500))
+        self.userid = userid
+        self.token = token
 
         panel = wx.Panel(self)
         main_sizer = wx.BoxSizer(wx.VERTICAL)
@@ -1403,8 +1406,23 @@ class PermutationDialog(wx.Dialog):
 
         # 型号输入框
         main_sizer.Add(wx.StaticText(panel, label="请输入设备型号（每行一个）:"), 0, wx.ALL, 5)
-        self.devices_textctrl = wx.TextCtrl(panel, style=wx.TE_MULTILINE, size=(300, 100))
+        self.devices_textctrl = wx.TextCtrl(panel, style=wx.TE_MULTILINE, size=(200, 100))
         main_sizer.Add(self.devices_textctrl, 1, wx.EXPAND | wx.ALL, 5)
+
+        # 新增输入框：计划名称
+        main_sizer.Add(wx.StaticText(panel, label="请输入计划名称:"), 0, wx.ALL, 5)
+        self.plan_name_textctrl = wx.TextCtrl(panel)
+        main_sizer.Add(self.plan_name_textctrl, 0, wx.EXPAND | wx.ALL, 5)
+
+        # 新增输入框：项目名称
+        main_sizer.Add(wx.StaticText(panel, label="请输入项目名称:"), 0, wx.ALL, 5)
+        self.project_name_textctrl = wx.TextCtrl(panel)
+        main_sizer.Add(self.project_name_textctrl, 0, wx.EXPAND | wx.ALL, 5)
+
+        # 新增输入框：项目阶段
+        main_sizer.Add(wx.StaticText(panel, label="请输入项目阶段:"), 0, wx.ALL, 5)
+        self.project_phase_textctrl = wx.TextCtrl(panel)
+        main_sizer.Add(self.project_phase_textctrl, 0, wx.EXPAND | wx.ALL, 5)
 
         # 生成按钮
         generate_button = wx.Button(panel, label="生成排列")
@@ -1426,6 +1444,18 @@ class PermutationDialog(wx.Dialog):
             wx.MessageBox("设备型号的数量不能小于选中的端口数量", "提示", wx.OK | wx.ICON_WARNING)
             return
 
+        # 获取用户输入的计划名称、项目名称和项目阶段
+        plan_name = self.plan_name_textctrl.GetValue().strip()
+        project_name = self.project_name_textctrl.GetValue().strip()
+        project_phase = self.project_phase_textctrl.GetValue().strip()
+
+        if not plan_name or not project_name or not project_phase:
+            wx.MessageBox("计划名称、项目名称和项目阶段不能为空", "提示", wx.OK | wx.ICON_WARNING)
+            return
+        result = http_manager.get_params(f'/get_plan_name_by_planname/{plan_name}/{self.userid}').get('plan_exists')
+        if result:
+            wx.MessageBox(f"当前计划名: {result} 已存在，请勿重复上传", "提示", wx.OK | wx.ICON_WARNING)
+            return
         # 生成排列组合
         combinations = list(itertools.permutations(devices, len(selected_ports)))
 
@@ -1438,12 +1468,15 @@ class PermutationDialog(wx.Dialog):
 
             # 获取用户选择的路径
             save_path = file_dialog.GetPath()
-        # 创建 Excel 文件并保存
+
+        # 创建 Excel 文件并保存，同时提交到后端
         try:
-            self.save_to_excel(selected_ports, combinations, save_path)
+            all_case = self.save_to_excel(selected_ports, combinations, save_path)
+            self.submit_to_backend(plan_name, project_name, project_phase, all_case, save_path)
             wx.MessageBox(f"排列组合已生成并保存为 {save_path}", "提示", wx.OK | wx.ICON_INFORMATION)
+            self.Close()
         except Exception as e:
-            wx.MessageBox(f"保存文件时发生错误: {str(e)}", "错误", wx.OK | wx.ICON_ERROR)
+            wx.MessageBox(f"保存文件或提交数据时发生错误: {str(e)}", "错误", wx.OK | wx.ICON_ERROR)
 
     def save_to_excel(self, columns, data, file_path):
         # 创建 Excel 工作簿
@@ -1454,9 +1487,37 @@ class PermutationDialog(wx.Dialog):
         # 写入固定的用例模板标题
         ws.append(["测试机型", "用例标题", "前置条件", "用例步骤", "预期结果"])
 
+        all_case = []  # 用于存储所有用例数据
+
         # 写入数据行
         for combination in data:
-            ws.append(["", "[时间+1]" + ", ".join(columns), "", ", ".join(combination), "功能正常"])
+            case = {
+                'title': "[时间+5]" + ", ".join(columns),
+                'steps': ", ".join(combination),
+                'expected': "功能正常"
+            }
+            all_case.append(case)
+            ws.append(["", case['title'], "", case['steps'], case['expected']])
 
         # 保存文件
         wb.save(file_path)
+        return all_case
+
+    def submit_to_backend(self, plan_name, project_name, project_phase, all_case, file_path):
+        # 构造请求数据
+        model_names = ["DefaultModel"]
+        workloading = str(len(all_case)*5)+'(Min)'  # 每条case默认5分钟
+        case_data = {
+            'plan_name': plan_name,
+            'project_phase': project_phase,
+            'project_name': project_name,
+            'sheet_name': "多口排列组合测试用例",  # 默认值
+            'tester': self.userid,
+            'workloading': workloading,
+            'cases': all_case,
+            'model_name': model_names,  # 默认值
+            'filename': file_path
+        }
+
+        # 提交到后端
+        http_manager.post_data('/insert_case', data=case_data, token=self.token)

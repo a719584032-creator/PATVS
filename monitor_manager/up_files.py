@@ -266,7 +266,7 @@ def run_main(file_path, userid, token):
         project_name = data.get_value_by_rc(1, 4)
         project_phase = data.get_value_by_rc(4, 4)
         # 使用正则表达式查找所有中括号内的内容
-        model_name = extract_values_from_brackets(data.get_value_by_rc(8, 2))
+        model_names = extract_values_from_brackets(data.get_value_by_rc(8, 2))
         logger.info(f'project_name is {project_name}')
         data.active_sheet('Case List')
         all_sheet = data.getColValues(2)[2:]
@@ -282,7 +282,7 @@ def run_main(file_path, userid, token):
             all_case = get_all_test(file_path, i[0])
             case_data = {'plan_name': plan_name, 'project_phase': project_phase, 'project_name': project_name,
                          'sheet_name': i[0], 'tester': userid,
-                         'workloading': i[2], 'cases': all_case, 'model_name': model_name, 'filename': file_path}
+                         'workloading': i[2], 'cases': all_case, 'model_name': model_names, 'filename': file_path}
             http_manager.post_data('/insert_case', data=case_data, token=token)
     elif template == 'power':
         logger.info("电源模版")
