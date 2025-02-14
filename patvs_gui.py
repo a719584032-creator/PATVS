@@ -223,7 +223,7 @@ class MainApp(wx.App):
             add_to_startup(app_name)
             wx.MessageBox("程序已成功设置为开机自启动", "提示", wx.OK | wx.ICON_INFORMATION)
 
-        login_dialog = LoginDialog(None, title="PATVS-测试管理系统")
+        login_dialog = LoginDialog(None, title="TTS-测试管理系统")
         if login_dialog.ShowModal() == wx.ID_OK:
             username = login_dialog.logged_in_username
             token = login_dialog.token
