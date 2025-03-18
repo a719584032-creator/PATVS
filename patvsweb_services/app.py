@@ -708,15 +708,12 @@ def get_case_actions_and_num(case_id):
 @app.route('/update_project_workloading_tester', methods=['POST'])
 def update_project_workloading_tester():
     data = request.json
-    plan_name = data.get('plan_name')
-    project_name = data.get('project_name', None)
+    plan_id = data.get('plan_id')
     workloading = data.get('workloading', None)
     tester = data.get('tester', None)
-    sheet_id = data.get('sheet_id', None)
     logger.info(
-        f"update_project_workloading_tester plan_name: {plan_name}")
-
-    if not plan_name:
+        f"update_project_workloading_tester plan_id: {plan_id}")
+    if not plan_id:
         return jsonify({'error': 'Missing required parameters'}), 400
     conn = get_db_connection()
     cursor = conn.cursor()
@@ -726,7 +723,7 @@ def update_project_workloading_tester():
             res = manager.select_userid_by_username(tester)
             if not res:
                 return jsonify({'message': f'你输入的用户 {tester} 不存在'}), 400
-        manager.update_project_workloading_tester(plan_name, project_name, workloading, tester, sheet_id)
+        manager.update_project_workloading_tester(plan_id, workloading, tester)
         conn.commit()
         return jsonify({'message': 'success'}), 200
     except Exception as e:

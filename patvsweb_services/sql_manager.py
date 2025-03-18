@@ -1080,13 +1080,10 @@ class TestCaseManager:
         logger.info(case_title)
         return case_title[0]
 
-    def update_project_workloading_tester(self, plan_name, project=None, workloading=None, tester=None, sheet_id=None):
+    def update_project_workloading_tester(self, plan_id, workloading=None, tester=None):
         # 建立动态更新的 SQL 语句
         fields_to_update = []
         params = []
-        if project:
-            fields_to_update.append("project = %s")
-            params.append(project)
         if workloading:
             fields_to_update.append("workloading = %s")
             params.append(workloading)
@@ -1097,19 +1094,29 @@ class TestCaseManager:
         if not fields_to_update:
             logger.warning("没有要更新的字段")
             return
-        # 更新 testsheet 表
-        if sheet_id:
-            update_query = f"UPDATE testsheet SET {', '.join(fields_to_update)} WHERE id = %s"
-            logger.warning("仅更新sheet")
-            logger.warning(update_query)
-            params.append(sheet_id)
-        else:
-            plan_id = self.select_plan_id(plan_name)
-            update_query = f"UPDATE testsheet SET {', '.join(fields_to_update)} WHERE plan_id = %s"
-            logger.warning("更新所有计划")
-            logger.warning(update_query)
-            params.append(plan_id)
+            # 更新所有关联的测试用例表
+        update_query = f"UPDATE testsheet SET {', '.join(fields_to_update)} WHERE plan_id = %s"
+        logger.warning("更新所有计划关联的sheet")
+        logger.warning(update_query)
+        params.append(plan_id)
+
+        # 执行更新testsheet表的操作
         self.cursor.execute(update_query, params)
+
+        # 如果有测试人员信息，同时更新testplan表中的userId
+        if tester:
+            # 首先获取tester对应的userId
+            self.cursor.execute("SELECT userId FROM users WHERE username = %s", (tester,))
+            user_result = self.cursor.fetchone()
+            if user_result:
+                user_id = user_result[0]
+                # 更新testplan表中的userId字段
+                update_plan_query = "UPDATE testplan SET userId = %s WHERE id = %s"
+                logger.warning("同时更新testplan表中的userId")
+                logger.warning(update_plan_query)
+                self.cursor.execute(update_plan_query, (user_id, plan_id))
+            else:
+                logger.warning(f"未找到用户名为 {tester} 的用户ID")
 
     def upload_image_file(self, execution_id, original_filename, stored_filename, s3_key, file_size, mime_type):
         # 执行插入操作

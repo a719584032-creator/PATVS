@@ -303,41 +303,39 @@ class TestAdminPanel(wx.Panel):
             wx.MessageBox(f'未知错误: {str(e)}', 'Error', wx.OK | wx.ICON_ERROR)
 
     def on_modify(self, event):
+        project_name = self.project_name_combo.GetValue()
         plan_name = self.plan_name_combo.GetValue()
-        sheet_name = self.sheet_name_combo.GetValue()
 
         if not plan_name:  # 如果未选择测试计划
             wx.MessageBox('请先选择一个测试计划', '提示', wx.OK | wx.ICON_WARNING)
             return
 
-        if sheet_name:  # 如果选择了测试用例表
-            selected_index = self.sheet_name_combo.GetSelection()
-            sheet_id = self.sheet_name_combo.GetClientData(selected_index)
-            modify_dialog = ModifyDialog(self, "修改 Sheet 信息", plan_name, sheet_name, sheet_id)
-        else:  # 只选择了测试计划
-            modify_dialog = ModifyDialog(self, "修改测试计划信息", plan_name)
+        # 确保 plan_id 已定义
+        if not hasattr(self, 'plan_id'):
+            wx.MessageBox('请先选择一个有效的测试计划', '提示', wx.OK | wx.ICON_WARNING)
+            return
+
+        # 创建修改对话框，只用于修改测试计划
+        modify_dialog = ModifyDialog(self, "修改测试计划信息", project_name, plan_name)
 
         if modify_dialog.ShowModal() == wx.ID_OK:
             new_data = modify_dialog.get_values()
             try:
-                if sheet_name:
-                    data = {
-                        'plan_name': plan_name,
-                        'sheet_id': sheet_id,
-                        'tester': new_data['tester'],
-                        'project': new_data['project'],
-                        'workloading': new_data['workloading'] + '(Min)',
-                    }
-                else:
-                    data = {
-                        'plan_name': plan_name,
-                        'tester': new_data['tester'],
-                        'project': new_data['project'],
-                        'workloading': new_data['workloading'] + '(Min)',
-                    }
+                # 创建要发送的数据
+                data = {
+                    'plan_id': self.plan_id,
+                    'tester': new_data['tester'],
+                    'workloading': new_data['workloading']
+                }
+
                 logger.warning(data)
-                http_manager.post_data('/update_project_workloading_tester', data=data, token=self.token)
-                self.on_plan_select(plan_name)
+                response = http_manager.post_data('/update_project_workloading_tester', data=data, token=self.token)
+
+                # 重新加载数据
+                # 创建一个模拟的事件对象
+                mock_event = wx.CommandEvent(wx.wxEVT_COMMAND_COMBOBOX_SELECTED)
+                self.on_plan_select(mock_event)
+
                 wx.MessageBox('修改成功', '提示', wx.OK | wx.ICON_INFORMATION)
             except Exception as e:
                 wx.MessageBox(f'修改失败: {str(e)}', '错误', wx.OK | wx.ICON_ERROR)
@@ -526,21 +524,17 @@ class TestAdminPanel(wx.Panel):
 
 
 class ModifyDialog(wx.Dialog):
-    def __init__(self, parent, title, project_name, plan_name, sheet_name=None, sheet_id=None):
+    def __init__(self, parent, title, project_name, plan_name):
         super().__init__(parent, title=title, size=(300, 250))
         panel = wx.Panel(self)
         main_sizer = wx.BoxSizer(wx.VERTICAL)
 
-        # 仅添加一次的控件，不重复
+        # 显示项目和计划信息
         project_label = wx.StaticText(panel, label=f"测试项目: {project_name}")
         main_sizer.Add(project_label, 0, wx.ALL, 5)
 
         plan_label = wx.StaticText(panel, label=f"测试计划: {plan_name}")
         main_sizer.Add(plan_label, 0, wx.ALL, 5)
-
-        if sheet_name:  # 如果有测试用例表，添加显示
-            sheet_label = wx.StaticText(panel, label=f"测试用例表: {sheet_name}")
-            main_sizer.Add(sheet_label, 0, wx.ALL, 5)
 
         # 创建静态文本和输入框
         tester_label = wx.StaticText(panel, label="测试人员:")
@@ -548,12 +542,6 @@ class ModifyDialog(wx.Dialog):
         self.tester.SetHint("请输入测试人员，为空表示不修改")
         main_sizer.Add(tester_label, 0, wx.ALL, 5)
         main_sizer.Add(self.tester, 0, wx.EXPAND | wx.ALL, 5)
-
-        # plan_label = wx.StaticText(panel, label="项目:")
-        # self.project = wx.TextCtrl(panel, value="", size=(200, -1))
-        # self.project.SetHint("请输入项目，为空表示不修改")
-        # main_sizer.Add(project_label, 0, wx.ALL, 5)
-        # main_sizer.Add(self.project, 0, wx.EXPAND | wx.ALL, 5)
 
         workloading_label = wx.StaticText(panel, label="预估时间(min):")
         self.workloading = wx.TextCtrl(panel, value="", size=(200, -1), style=wx.TE_PROCESS_ENTER)
@@ -563,7 +551,7 @@ class ModifyDialog(wx.Dialog):
         main_sizer.Add(self.workloading, 0, wx.EXPAND | wx.ALL, 5)
 
         # OK 和 Cancel 按钮
-        button_sizer = wx.BoxSizer(wx.HORIZONTAL)  # 修正此处
+        button_sizer = wx.BoxSizer(wx.HORIZONTAL)
         ok_button = wx.Button(panel, wx.ID_OK, label="确定")
         cancel_button = wx.Button(panel, wx.ID_CANCEL, label="取消")
         button_sizer.Add(ok_button, 0, wx.ALL, 5)
@@ -575,18 +563,18 @@ class ModifyDialog(wx.Dialog):
         panel.SetSizer(main_sizer)
         panel.Layout()  # 强制更新布局
 
-        self.SetSize((400, 400))  # 手动设置窗口大小以避免过小
+        self.SetSize((400, 300))  # 调整窗口大小
         self.Centre()  # 窗口居中
 
+        self.project_name = project_name
         self.plan_name = plan_name
-        self.sheet_name = sheet_name
-        self.sheet_id = sheet_id
 
     def get_values(self):
         return {
             'tester': self.tester.GetValue(),
-            # 'project': self.project.GetValue(),
+            'project': self.project_name,
             'workloading': self.workloading.GetValue(),
+            'plan_name': self.plan_name
         }
 
     def on_char(self, event):
@@ -596,7 +584,6 @@ class ModifyDialog(wx.Dialog):
             event.Skip()  # 允许数字输入和删除键
         else:
             return  # 阻止其他字符输入
-
 
 class ButtonRenderer(wx.grid.GridCellRenderer):
     """自定义按钮渲染器，仅显示蓝色字体"""
