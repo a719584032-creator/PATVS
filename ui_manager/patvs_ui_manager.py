@@ -1244,9 +1244,7 @@ class TestCasesPanel(wx.Panel):
         # 获取Windows下载目录路径
         downloads_path = os.path.join(os.path.expanduser('~'), 'Downloads')
         # 设置文件名和路径
-        now = datetime.now()
-        formatted_now = now.strftime('%Y_%m_%d_%H_%M_%S')
-        filename = f"TTS_result_{formatted_now}.xlsx"
+        filename = f"{self.sheet_name}.xlsx"
         filepath = os.path.join(downloads_path, filename)
 
         # 创建一个Workbook和一个Worksheet
