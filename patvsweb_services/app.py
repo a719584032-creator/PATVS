@@ -574,18 +574,31 @@ def add_user():
     username = data.get('username')
     password = data.get('password')
     role = data.get('role', None)
-    logger.info(f"add uesr by username: {username}, password: {password} ")
 
+    logger.info(f"add user by username: {username}")
+
+    # 用户名和密码必填校验
     if not username or not password:
-        return jsonify({'error': 'Missing required parameters'}), 400
+        logger.warning('用户名和密码不能为空')
+        return jsonify({'error': '用户名和密码不能为空'}), 400
+
+    # 用户名长度校验
+    if not (3 <= len(username) <= 15):
+        logger.warning('用户名长度必须为3-15位')
+        return jsonify({'error': '用户名长度必须为3-15位'}), 400
 
     conn = get_db_connection()
     cursor = conn.cursor()
     try:
         manager = TestCaseManager(conn, cursor)
+        # 检查用户是否已存在
+        if manager.user_exists(username):
+            logger.warning('用户名已存在')
+            return jsonify({'error': '用户名已存在'}), 400
+
         manager.add_user(username, password, role)
         conn.commit()
-        return jsonify({'message': f'add user {username} successfully.'}), 200
+        return jsonify({'message': f'用户 {username} 添加成功！'}), 200
     except Exception as e:
         conn.rollback()
         logger.error(f"An error occurred: {e}")
@@ -593,6 +606,7 @@ def add_user():
     finally:
         cursor.close()
         conn.close()
+
 
 
 @app.route('/login', methods=['POST'])
@@ -1039,6 +1053,29 @@ def serve_file(filename):
 
     # 返回文件内容
     return send_file(file_path)
+
+
+@app.route('/modify/case_titles', methods=['POST'])
+def modify_case_titles():
+    data = request.json
+    cases = data.get("cases")
+    if not cases or not isinstance(cases, list):
+        return jsonify({'error': 'cases(list) is required'}), 400
+
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    manager = TestCaseManager(conn, cursor)
+    try:
+        # 批量修改
+        results = manager.update_case_titles(cases)
+        conn.commit()
+        return jsonify(results), 200
+    except Exception as e:
+        logger.error(f"Failed to batch update case titles: {e}")
+        return jsonify({'error': 'Failed to batch update case titles'}), 500
+    finally:
+        cursor.close()
+        conn.close()
 
 
 if __name__ == '__main__':

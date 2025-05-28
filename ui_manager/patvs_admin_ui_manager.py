@@ -138,7 +138,6 @@ class TestAdminPanel(wx.Panel):
         self.sheetLabel = wx.StaticText(self, label="测试用例")
         caseSearchSizer.Add(self.sheetLabel, 0, wx.ALL, 5)
         caseSearchSizer.Add(self.sheet_name_combo, 0, wx.ALL, 5)
-
         #  caseSearchSizer.Add(self.modify_button, 0, wx.CENTER | wx.ALL, 5)
 
         mainSizer.Add(caseSearchSizer, 0, wx.EXPAND)
@@ -150,8 +149,14 @@ class TestAdminPanel(wx.Panel):
         self.view_button = wx.Button(self, label="查看详情")
         self.view_button.Bind(wx.EVT_BUTTON, self.check_status)
         # 添加修改按钮
-        self.modify_button = wx.Button(self, label="修改")
+        self.modify_button = wx.Button(self, label="修改人员")
         self.modify_button.Bind(wx.EVT_BUTTON, self.on_modify)
+
+        self.modify_case_title_button = wx.Button(self, label="修改用例标题")
+        self.modify_case_title_button.Bind(wx.EVT_BUTTON, self.on_modify_case_title)
+
+        self.add_user_button = wx.Button(self, label="添加用户")
+        self.add_user_button.Bind(wx.EVT_BUTTON, self.add_user)
 
         infoSizer.Add(self.testerLabel, 0, wx.ALL, 5)
         infoSizer.AddSpacer(100)
@@ -159,6 +164,8 @@ class TestAdminPanel(wx.Panel):
         infoSizer.AddSpacer(100)
         infoSizer.Add(self.view_button, 0, wx.CENTER | wx.ALL, 5)
         infoSizer.Add(self.modify_button, 0, wx.CENTER | wx.ALL, 5)
+        infoSizer.Add(self.modify_case_title_button, 0, wx.CENTER | wx.ALL, 5)
+        infoSizer.Add(self.add_user_button, 0, wx.CENTER | wx.ALL, 5)
         mainSizer.Add(infoSizer, 0, wx.EXPAND)
 
         # 创建一个 notebook，用于添加多个面板
@@ -522,6 +529,57 @@ class TestAdminPanel(wx.Panel):
         webbrowser.open(f"file://{html_path}")
         logger.info(f"HTML file generated and opened in browser: {html_path}")
 
+    def on_modify_case_title(self, event):
+        # 检查是否选择了sheet和model
+        if not hasattr(self, 'sheet_id') or not hasattr(self, 'model_id'):
+            wx.MessageBox('请先选择用例', '提示')
+            return
+
+        # 获取用例数据（可复用check_status逻辑）
+        case_list = http_manager.get_cases_by_sheet_id(self.sheet_id, self.model_id)
+        # 只保留CaseID和CaseTitle
+        case_simple = [{'CaseID': c['CaseID'], 'CaseTitle': c['CaseTitle']} for c in case_list]
+
+        dialog = EditCaseTitleDialog(self, case_simple)
+        if dialog.ShowModal() == wx.ID_OK:
+            modified = dialog.get_modified_titles()
+            changed = [c for c, ori in zip(modified, case_simple) if c['CaseTitle'] != ori['CaseTitle']]
+            if changed:
+                try:
+                    data = {"cases": [{"case_id": item['CaseID'], "case_title": item['CaseTitle']} for item in changed]}
+                    resp = http_manager.post_data('/modify/case_titles', data=data, token=self.token)
+                    if resp and resp.get("success_count") == len(changed):
+                        wx.MessageBox("全部修改成功！", "结果")
+                    else:
+                        wx.MessageBox(f"有部分修改失败，成功{resp.get('success_count', 0)}项", "结果")
+                except Exception as e:
+                    wx.MessageBox("批量修改失败", "错误")
+            else:
+                wx.MessageBox("没有需要修改的内容", "提示")
+        dialog.Destroy()
+
+    def add_user(self, event):
+        dlg = AddUserDialog(self)
+        if dlg.ShowModal() == wx.ID_OK:
+            info = dlg.get_user_info()
+            data = {
+                "username": info["username"],
+                "password": info["password"]
+            }
+            # 只有勾选了管理员才传role
+            if info["is_admin"]:
+                data["role"] = "admin"
+
+            try:
+                resp = http_manager.post_data("/add_user", data=data, token=self.token)
+                if resp and resp.get("message"):
+                    wx.MessageBox("用户添加成功！", "提示")
+                else:
+                    wx.MessageBox(f"添加失败: {resp.get('error', '未知错误')}", "错误")
+            except Exception as e:
+                wx.MessageBox(f"添加用户异常: {e}", "错误")
+        dlg.Destroy()
+
 
 class ModifyDialog(wx.Dialog):
     def __init__(self, parent, title, project_name, plan_name):
@@ -621,3 +679,100 @@ class ButtonRenderer(wx.grid.GridCellRenderer):
     def Clone(self):
         """克隆渲染器实例"""
         return ButtonRenderer(self.label)
+
+
+class EditCaseTitleDialog(wx.Dialog):
+    def __init__(self, parent, case_list):
+        super().__init__(parent, title="批量修改用例标题", size=(700, 500),
+                         style=wx.DEFAULT_DIALOG_STYLE | wx.RESIZE_BORDER)
+        self.Centre()
+        self.case_list = case_list
+        self.edits = []
+
+        main_sizer = wx.BoxSizer(wx.VERTICAL)
+
+        # 使用可滚动窗口
+        scroll_win = wx.ScrolledWindow(self, style=wx.VSCROLL)
+        scroll_win.SetScrollRate(0, 20)  # 竖直滚动
+        grid_sizer = wx.FlexGridSizer(cols=2, hgap=10, vgap=8)
+        grid_sizer.Add(wx.StaticText(scroll_win, label="CaseID"), 0, wx.ALIGN_CENTER)
+        grid_sizer.Add(wx.StaticText(scroll_win, label="用例标题（可编辑）"), 0, wx.ALIGN_CENTER)
+
+        for case in self.case_list:
+            grid_sizer.Add(wx.StaticText(scroll_win, label=str(case['CaseID'])), 0, wx.ALIGN_CENTER_VERTICAL)
+            edit = wx.TextCtrl(scroll_win, value=case['CaseTitle'])
+            self.edits.append(edit)
+            grid_sizer.Add(edit, 1, wx.EXPAND)
+
+        grid_sizer.AddGrowableCol(1, 1)
+        scroll_win.SetSizer(grid_sizer)
+        scroll_win.FitInside()
+        scroll_win.SetMinSize((650, 380))  # 设置内容区最小高度
+
+        main_sizer.Add(scroll_win, 1, wx.ALL | wx.EXPAND, 10)
+
+        # 按钮
+        btn_sizer = wx.StdDialogButtonSizer()
+        btn_ok = wx.Button(self, wx.ID_OK, label="保存")
+        btn_cancel = wx.Button(self, wx.ID_CANCEL, label="取消")
+        btn_sizer.AddButton(btn_ok)
+        btn_sizer.AddButton(btn_cancel)
+        btn_sizer.Realize()
+        main_sizer.Add(btn_sizer, 0, wx.ALIGN_CENTER | wx.ALL, 10)
+
+        self.SetSizer(main_sizer)
+        self.Layout()
+        self.Fit()
+
+    def get_modified_titles(self):
+        return [
+            {'CaseID': case['CaseID'], 'CaseTitle': edit.GetValue()}
+            for case, edit in zip(self.case_list, self.edits)
+        ]
+
+
+class AddUserDialog(wx.Dialog):
+    def __init__(self, parent):
+        super().__init__(parent, title="添加用户", size=(350, 220))
+        self.Centre()
+
+        vbox = wx.BoxSizer(wx.VERTICAL)
+
+        # 用户名
+        hbox_user = wx.BoxSizer(wx.HORIZONTAL)
+        hbox_user.Add(wx.StaticText(self, label="用户名："), 0, wx.ALIGN_CENTER_VERTICAL | wx.RIGHT, 8)
+        self.username_ctrl = wx.TextCtrl(self)
+        hbox_user.Add(self.username_ctrl, 1, wx.EXPAND)
+        vbox.Add(hbox_user, 0, wx.ALL | wx.EXPAND, 10)
+
+        # 密码（默认123456）
+        hbox_pwd = wx.BoxSizer(wx.HORIZONTAL)
+        hbox_pwd.Add(wx.StaticText(self, label="密码："), 0, wx.ALIGN_CENTER_VERTICAL | wx.RIGHT, 8)
+        self.password_ctrl = wx.TextCtrl(self, value="123456")
+        hbox_pwd.Add(self.password_ctrl, 1, wx.EXPAND)
+        vbox.Add(hbox_pwd, 0, wx.ALL | wx.EXPAND, 10)
+
+        # 管理员勾选框
+        self.admin_checkbox = wx.CheckBox(self, label="管理员 (admin)")
+        vbox.Add(self.admin_checkbox, 0, wx.LEFT | wx.TOP, 18)
+
+        # 按钮
+        btn_sizer = wx.StdDialogButtonSizer()
+        btn_ok = wx.Button(self, wx.ID_OK, label="添加")
+        btn_cancel = wx.Button(self, wx.ID_CANCEL, label="取消")
+        btn_sizer.AddButton(btn_ok)
+        btn_sizer.AddButton(btn_cancel)
+        btn_sizer.Realize()
+        vbox.Add(btn_sizer, 0, wx.ALIGN_CENTER | wx.ALL, 10)
+
+        self.SetSizer(vbox)
+        self.Layout()
+        self.Fit()
+
+    def get_user_info(self):
+        return {
+            "username": self.username_ctrl.GetValue().strip(),
+            "password": self.password_ctrl.GetValue().strip(),
+            "is_admin": self.admin_checkbox.GetValue()
+        }
+

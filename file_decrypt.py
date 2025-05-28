@@ -13,12 +13,19 @@ class ExcelProcessorWorker(QObject):
     processing_file = pyqtSignal(str)  # 当前处理文件信号
     finished = pyqtSignal(bool, str)  # 完成信号，带成功状态和消息
 
-    def __init__(self, input_files, output_file):
+    def __init__(self, input_files, output_file, mode=1):
         super().__init__()
         self.input_files = input_files
         self.output_file = output_file
+        self.mode = mode  # 新增处理模式参数
 
     def process(self):
+        if self.mode == 1:
+            self.process_mode1()
+        else:
+            self.process_mode2()
+
+    def process_mode1(self):
         try:
             # 初始化结果列表和临时变量
             results = []
@@ -105,6 +112,69 @@ class ExcelProcessorWorker(QObject):
             # 处理过程中出错，发送错误信号
             self.finished.emit(False, f"处理过程中发生错误: {str(e)}")
 
+    def process_mode2(self):
+        try:
+            results = []
+            current_level0 = None
+            current_level1 = None
+            total_files = len(self.input_files)
+
+            for file_index, file_path in enumerate(self.input_files):
+                self.processing_file.emit(f"正在处理: {os.path.basename(file_path)}")
+                df = pd.read_excel(file_path)
+                df.columns = [col.lower() if isinstance(col, str) else col for col in df.columns]
+                level_col = next((col for col in df.columns if isinstance(col, str) and col.lower() == 'level'), None)
+                part_number_col = next(
+                    (col for col in df.columns if isinstance(col, str) and col.lower() == 'part number'), None)
+                name_col = next((col for col in df.columns if isinstance(col, str) and col.lower() == 'name'), None)
+
+                if level_col is None or part_number_col is None or name_col is None:
+                    print(f"警告：文件 {file_path} 缺少必要的列，跳过处理")
+                    continue
+
+                # 计算当前文件的行数，用于进度更新
+                total_rows = len(df)
+
+
+                for i, row in df.iterrows():
+                    progress = int((file_index * 100 + (i / total_rows) * 100) / total_files)
+                    self.progress_updated.emit(progress)
+                    level = row[level_col]
+                    part_number = str(row[part_number_col]).strip()
+                    name_val = row[name_col] if name_col else ""
+                    if level == 3:
+                        continue
+                    if level == 0:
+                        current_level0 = part_number.replace(" ", "")
+                        current_level1 = None
+                    elif level == 1:
+                        current_level1 = part_number.replace(" ", "")
+                    elif level == 2 and current_level1 is not None:
+                        part_number_clean = part_number.replace(" ", "")
+                        if not part_number_clean.upper().startswith(('S86', 'CTO')):
+                            mtm = part_number_clean
+                            sbb = current_level1
+                            option = current_level0 if current_level0 else ""
+                            mtmsbbopt = f"{mtm}{sbb}{option}"
+                            country_code = mtm[-2:] if len(mtm) >= 2 else mtm
+                            mtm_name = name_val
+                            results.append({
+                                'MTM': mtm,
+                                'SBB': sbb,
+                                'OPTION': option,
+                                'MTMSBBOPT': mtmsbbopt,
+                                'COUNTRY CODE': country_code,
+                                'MTM NAME': mtm_name
+                            })
+            result_df = pd.DataFrame(results)
+            result_df.to_excel(self.output_file, index=False)
+            self.progress_updated.emit(100)
+            self.finished.emit(True, f"处理完成，结果已保存到 {self.output_file}")
+        except Exception as e:
+            self.finished.emit(False, f"处理过程中发生错误: {str(e)}")
+
+
+
 
 class ExcelProcessorApp(QMainWindow):
     def __init__(self):
@@ -178,9 +248,14 @@ class ExcelProcessorApp(QMainWindow):
         file_layout.addWidget(self.progress_bar)
 
         # 处理按钮
-        self.process_btn = QPushButton("开始处理")
+        self.process_btn = QPushButton("DOCK文件处理")
         self.process_btn.clicked.connect(self.process_files)
         file_layout.addWidget(self.process_btn)
+
+        # 新增：开始处理2按钮
+        self.process2_btn = QPushButton("AUDIO文件处理")
+        self.process2_btn.clicked.connect(self.process_files2)
+        file_layout.addWidget(self.process2_btn)
 
         main_layout.addWidget(file_section)
 
@@ -272,6 +347,34 @@ class ExcelProcessorApp(QMainWindow):
         # 启动线程
         self.thread.start()
 
+    def process_files2(self):
+        if not self.file_list:
+            QMessageBox.warning(self, "警告", "请先添加Excel文件")
+            return
+
+        output_file = self.output_path_label.text()
+        if output_file == "未选择":
+            QMessageBox.warning(self, "警告", "请选择输出文件")
+            return
+
+        self.set_controls_enabled(False)
+        self.progress_bar.setValue(0)
+        self.progress_label.setText("准备处理...")
+
+        self.thread = QThread()
+        self.worker = ExcelProcessorWorker(self.file_list, output_file, mode=2)  # mode=2
+        self.worker.moveToThread(self.thread)
+
+        self.thread.started.connect(self.worker.process)
+        self.worker.progress_updated.connect(self.update_progress)
+        self.worker.processing_file.connect(self.update_status)
+        self.worker.finished.connect(self.process_finished)
+        self.worker.finished.connect(self.thread.quit)
+        self.worker.finished.connect(self.worker.deleteLater)
+        self.thread.finished.connect(self.thread.deleteLater)
+
+        self.thread.start()
+
     def update_progress(self, value):
         """更新进度条"""
         self.progress_bar.setValue(value)
@@ -314,3 +417,4 @@ if __name__ == "__main__":
     window = ExcelProcessorApp()
     window.show()
     sys.exit(app.exec_())
+

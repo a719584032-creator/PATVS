@@ -1043,6 +1043,10 @@ class TestCaseManager:
         logger.info(plan_id)
         return plan_id[0]
 
+    def user_exists(self, username):
+        self.cursor.execute('SELECT 1 FROM users WHERE username = %s', (username,))
+        return self.cursor.fetchone() is not None
+
     def add_user(self, username, password, role=None):
         password_hash = generate_password_hash(password)
         self.cursor.execute(
@@ -1271,3 +1275,14 @@ class TestCaseManager:
         images = self.cursor.fetchall()
         logger.warning(images)
         return images
+
+    def update_case_titles(self, cases):
+        # cases: [{'case_id': int, 'case_title': str}]
+        query = "UPDATE testcase SET CaseTitle = %s WHERE CaseID = %s"
+        params = [(c['case_title'], c['case_id']) for c in cases if c.get('case_id') and c.get('case_title')]
+        self.cursor.executemany(query, params)
+        # 返回成功条数
+        return {
+            "success_count": self.cursor.rowcount,
+            "total": len(params)
+        }
