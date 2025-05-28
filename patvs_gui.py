@@ -230,9 +230,9 @@ class MainApp(wx.App):
             role = login_dialog.logged_in_role  # 获取用户角色
 
             if role == 'admin':
-                frame = AdminWindow(None, title="Test Tracking System-Admin-3.28", username=username, token=token)
+                frame = AdminWindow(None, title="Test Tracking System-Admin-5.28", username=username, token=token)
             else:
-                frame = MainWindow(None, title="Test Tracking System-3.28", username=username, token=token)
+                frame = MainWindow(None, title="Test Tracking System-5.28", username=username, token=token)
 
             self.SetTopWindow(frame)
             frame.Show(True)
