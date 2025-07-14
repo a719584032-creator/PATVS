@@ -65,15 +65,10 @@ def process_file(input_path, output_path):
         # 最后一次刷卡
         last_swipe = sorted(recs, key=lambda x: x['时间'])[-1] if recs else {'时间': ''}
 
-        # 随机时间
-        if name in ['叶松桥', '叶松乔']:
-            in_time_str = random_time_between('08:50:00', '09:30:00')
-            out_time_str = random_time_between('18:00:00', '19:00:00')
-            last_swipe_time = out_time_str  # 这里假定最后一次刷卡就是out
-        else:
-            in_time_str = str(first_in['时间'])
-            out_time_str = str(last_out['时间'])
-            last_swipe_time = str(last_swipe['时间'])
+
+        in_time_str = str(first_in['时间'])
+        out_time_str = str(last_out['时间'])
+        last_swipe_time = str(last_swipe['时间'])
 
         # 计算工时
         try:
