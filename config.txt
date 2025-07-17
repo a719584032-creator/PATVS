@@ -1,0 +1,5 @@
+BIOS: 111
+ECFW: 222
+MEFW: 333
+System SN: 444
+Retimer: 555
