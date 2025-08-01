@@ -27,6 +27,8 @@ class _GlobalSetting(object):
     aws_signature_version = attrib(default='', type=str)
     aws_bucket_name = attrib(default='', type=str)
     image_path = attrib(default='', type=str)
+    version = attrib(default='', type=str)
+    app_name = attrib(default='', type=str)
 
     def init_from_env(self):
         self.protocol = os.getenv("GLOBAL_SETTING_PROTOCOL")
@@ -47,6 +49,8 @@ class _GlobalSetting(object):
         self.aws_signature_version = os.getenv("AWS_SIGNATURE_VERSION")
         self.aws_bucket_name = os.getenv("AWS_BUCKET_NAME")
         self.image_path = os.getenv("IMAGE_PATH")
+        self.version = os.getenv("VERSION")
+        self.app_name = os.getenv("APP_NAME")
 
 
 class EnvConfig(metaclass=MetaSingleton):

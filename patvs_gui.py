@@ -10,11 +10,49 @@ import os
 from requests_manager.http_requests_manager import http_manager
 import json
 import base64
+import requests
+
 
 directory = "C:\\PATVS"
+VERSION = "1.0.3"
 if not os.path.exists(directory):
     os.makedirs(directory)
-file_dir = directory + '/credentials.json'
+file_dir = os.path.join(directory, 'credentials.json')
+
+
+def get_latest_version_info():
+    resp = http_manager.get_params('/app/update')
+    return resp
+
+
+def get_filename_from_url(url):
+    return url.split('/')[-1]
+
+
+def download_file(url, save_path, on_progress=None):
+    try:
+        with requests.get(url, stream=True, timeout=60, verify=False) as resp:
+            resp.raise_for_status()
+            total = int(resp.headers.get('content-length', 0))
+            downloaded = 0
+            with open(save_path, 'wb') as f:
+                for chunk in resp.iter_content(chunk_size=8192):
+                    if chunk:
+                        f.write(chunk)
+                        downloaded += len(chunk)
+                        if on_progress and total:
+                            percent = int(downloaded * 100 / total)
+                            wx.CallAfter(on_progress, percent)
+        return True
+    except Exception as e:
+        logger.error(f"下载失败: {e}")
+        return False
+
+
+def compare_version(v1, v2):
+    def parse(v): return [int(x) for x in v.split('.')]
+
+    return parse(v2) > parse(v1)
 
 
 def resource_path(relative_path):
@@ -217,28 +255,101 @@ class ChangePasswordDialog(wx.Dialog):
 class MainApp(wx.App):
     def OnInit(self):
         # 检查是否已设置为开机启动
-        app_name = "Test_Tracking_System"
+        app_name = f"Test_Tracking_System-{VERSION}"
         if not is_in_startup(app_name):
             logger.info("检测到程序未设置为开机启动，正在添加...")
             add_to_startup(app_name)
             wx.MessageBox("程序已成功设置为开机自启动", "提示", wx.OK | wx.ICON_INFORMATION)
 
-        login_dialog = LoginDialog(None, title="TTS-测试管理系统")
+        # 创建一个隐藏的Frame，防止主循环提前退出
+        self.dummy_frame = wx.Frame(None)
+        self.dummy_frame.Hide()
+
+        # 启动线程检查更新
+        import threading
+        threading.Thread(target=self.check_update_thread, daemon=True).start()
+        return True  # 先让主循环跑起来
+
+    def check_update_thread(self):
+        try:
+            info = get_latest_version_info()
+            if not info:
+                wx.CallAfter(self.show_login_dialog)
+                return
+
+            latest_ver = info['version']
+            desc = info.get('desc', '')
+            url = info['url']
+
+            if compare_version(VERSION, latest_ver):
+                # 弹窗必须在主线程
+                def ask_update():
+                    dlg = wx.MessageDialog(None,
+                                           f"检测到新版本 {latest_ver}：\n{desc}\n\n是否下载并安装？",
+                                           "发现新版本", wx.YES_NO | wx.ICON_INFORMATION)
+                    if dlg.ShowModal() == wx.ID_YES:
+                        dlg.Destroy()
+                        self.download_update_thread(url)
+                    else:
+                        dlg.Destroy()
+                        self.show_login_dialog()
+
+                wx.CallAfter(ask_update)
+            else:
+                wx.CallAfter(self.show_login_dialog)
+        except Exception as e:
+            logger.error(f"检测更新异常: {e}")
+            wx.CallAfter(self.show_login_dialog)
+
+    def download_update_thread(self, url):
+        filename = get_filename_from_url(url)
+        save_path = os.path.join(directory, filename)
+        # 进度条必须在主线程创建
+        wx.CallAfter(self.start_download_progress, url, save_path)
+
+    def start_download_progress(self, url, save_path):
+        progress_dlg = wx.ProgressDialog("下载更新至-C://PATVS", "正在下载新版本...", maximum=100, parent=None)
+        import threading
+
+        def on_progress(percent):
+            progress_dlg.Update(percent)
+
+        def do_download():
+            ok = download_file(url, save_path, on_progress)
+            wx.CallAfter(progress_dlg.Destroy)
+            if ok:
+                wx.CallAfter(self.download_success, save_path)
+            else:
+                wx.CallAfter(self.download_failed)
+
+        threading.Thread(target=do_download, daemon=True).start()
+
+    def download_success(self, save_path):
+        wx.MessageBox("下载成功，即将安装新版本", "提示", wx.OK | wx.ICON_INFORMATION)
+        os.startfile(save_path)
+        wx.GetApp().ExitMainLoop()
+        sys.exit(0)
+
+    def download_failed(self):
+        wx.MessageBox("下载失败，请稍后重试", "错误", wx.OK | wx.ICON_ERROR)
+        self.show_login_dialog()
+
+    def show_login_dialog(self):
+        login_dialog = LoginDialog(None, title=f"TTS-测试管理系统-{VERSION}")
         if login_dialog.ShowModal() == wx.ID_OK:
             username = login_dialog.logged_in_username
             token = login_dialog.token
-            role = login_dialog.logged_in_role  # 获取用户角色
+            role = login_dialog.logged_in_role
 
             if role == 'admin':
-                frame = AdminWindow(None, title="Test Tracking System-Admin-5.28", username=username, token=token)
+                frame = AdminWindow(None, title=f"Test Tracking System-Admin-{VERSION}", username=username, token=token)
             else:
-                frame = MainWindow(None, title="Test Tracking System-5.28", username=username, token=token)
+                frame = MainWindow(None, title=f"Test Tracking System-{VERSION}", username=username, token=token)
 
             self.SetTopWindow(frame)
             frame.Show(True)
-            return True
         else:
-            return False
+            wx.GetApp().ExitMainLoop()
 
     def OnExit(self):
         # Clean up any resources before the application exits

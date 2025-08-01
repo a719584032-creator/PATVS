@@ -50,10 +50,10 @@ def add_user(username, role, url):
 
 
 if __name__ == "__main__":
-    #keep_awake()
+    keep_awake()
     url = 'https://patvs.lenovo.com/add_user'
     #url= 'http://10.184.37.105/add_user'
-    add_user('liangxd5', '', url)
+    #add_user('liangxd5', '', url)
     # list1 = [['时间', '1']]
     # print(len(list1))
     # print('时间' in list1[0])

@@ -201,32 +201,60 @@ class Patvs_Fuction():
             else:
                 self.action_complete.set()  # 设置动作完成状态
 
-    def monitor_s3_and_power(self, start_time, s3_target_cycles, power_target_cycles):
-        # 创建事件对象，用于标记 S3 和 电源插拔 是否完成
-        s3_done_event = threading.Event()
-        power_done_event = threading.Event()
+    def monitor_s3_and_power(self, start_time, target_cycles):
+        wx.CallAfter(self.window.add_log_message, f"开始执行监控: S3电源插拔，目标测试次数: {target_cycles}")
+        for i in range(int(target_cycles)):
+            # S3一次
+            s3_done_event = threading.Event()
+            s3_thread = threading.Thread(
+                target=self.test_count_s3_sleep_events,
+                args=(start_time, i+1, s3_done_event)
+            )
+            s3_thread.start()
+            s3_done_event.wait()
+            s3_thread.join()
 
-        # 启动 S3 和 USB 的监控线程
-        s3_thread = threading.Thread(
-            target=self.test_count_s3_sleep_events,
-            args=(start_time, s3_target_cycles, s3_done_event)
-        )
-        power_thread = threading.Thread(
-            target=self.monitor_power_plug_changes,
-            args=(power_target_cycles, power_done_event)
-        )
+            # 插拔一次
+            power_done_event = threading.Event()
+            power_thread = threading.Thread(
+                target=self.monitor_power_plug_changes,
+                args=(1, power_done_event)
+            )
+            power_thread.start()
+            power_done_event.wait()
+            power_thread.join()
 
-        s3_thread.start()
-        power_thread.start()
-        # 等待两个事件都完成
-        while not (s3_done_event.is_set() and power_done_event.is_set()):
-            time.sleep(0.5)
+            wx.CallAfter(self.window.add_log_message, f"已完成第{i + 1}轮插拔+S3")
 
-        # 确保所有线程退出
+        wx.CallAfter(self.window.add_log_message, "所有插拔+S3循环已完成！")
         self.action_complete.set()
-        s3_thread.join()
-        power_thread.join()
-        wx.CallAfter(self.window.add_log_message, "S3 和 电源 插拔监控已完成。")
+
+    # def monitor_s3_and_power(self, start_time, s3_target_cycles, power_target_cycles):
+    #     # 创建事件对象，用于标记 S3 和 电源插拔 是否完成
+    #     s3_done_event = threading.Event()
+    #     power_done_event = threading.Event()
+    #
+    #     # 启动 S3 和 USB 的监控线程
+    #     s3_thread = threading.Thread(
+    #         target=self.test_count_s3_sleep_events,
+    #         args=(start_time, s3_target_cycles, s3_done_event)
+    #     )
+    #     power_thread = threading.Thread(
+    #         target=self.monitor_power_plug_changes,
+    #         args=(power_target_cycles, power_done_event)
+    #     )
+    #
+    #     s3_thread.start()
+    #     power_thread.start()
+    #     # 等待两个事件都完成
+    #     while not (s3_done_event.is_set() and power_done_event.is_set()):
+    #         time.sleep(0.5)
+    #
+    #     # 确保所有线程退出
+    #     self.action_complete.set()
+    #     s3_thread.join()
+    #     power_thread.join()
+    #     wx.CallAfter(self.window.add_log_message, "S3 和 电源 插拔监控已完成。")
 
     def test_count_s3_sleep_events(self, start_time, target_cycles, s3_done_event=None):
         def reopen_event_log():
@@ -355,6 +383,33 @@ class Patvs_Fuction():
         usb_thread.join()
 
         wx.CallAfter(self.window.add_log_message, "S3 和 USB 插拔监控已完成。")
+
+    # def monitor_s3_and_usb(self, start_time, target_cycles):
+    #     for i in range(int(target_cycles)):
+    #         # 1. 等待一次S3
+    #         s3_done_event = threading.Event()
+    #         s3_thread = threading.Thread(
+    #             target=self.test_count_s3_sleep_events,
+    #             args=(start_time, i+1, s3_done_event)
+    #         )
+    #         s3_thread.start()
+    #         s3_done_event.wait()
+    #         s3_thread.join()
+    #         wx.CallAfter(self.window.add_log_message, f"第{i + 1}轮：S3完成")
+    #
+    #         # 2. 等待一次USB插拔
+    #         usb_done_event = threading.Event()
+    #         usb_thread = threading.Thread(
+    #             target=self.monitor_device_plug_changes,
+    #             args=(2, usb_done_event)
+    #         )
+    #         usb_thread.start()
+    #         usb_done_event.wait()
+    #         usb_thread.join()
+    #         wx.CallAfter(self.window.add_log_message, f"第{i + 1}轮：USB插拔完成")
+    #
+    #     wx.CallAfter(self.window.add_log_message, "所有USB插拔+S3循环已完成！")
+    #     self.action_complete.set()
 
     # def test_count_s4_sleep_events(self, start_time, target_cycles):
     #     def reopen_event_log():
@@ -991,9 +1046,8 @@ class Patvs_Fuction():
                         wx.CallAfter(self.window.add_log_message, f"开始执行监控: {action}，目标测试次数: {test_num}")
                         threading.Thread(target=self.monitor_s3_and_usb, args=(start_time, test_num, test_num)).start()
                     elif action == 's3电源插拔':
-                        wx.CallAfter(self.window.add_log_message, f"开始执行监控: {action}，目标测试次数: {test_num}")
                         threading.Thread(target=self.monitor_s3_and_power,
-                                         args=(start_time, test_num, test_num)).start()
+                                         args=(start_time, test_num)).start()
                     elif action == '显示器':
                         wx.CallAfter(self.window.add_log_message,
                                      f"开始执行监控: {action} 开关事件，目标测试次数: {test_num}")

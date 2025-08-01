@@ -125,6 +125,12 @@ class TestCasesPanel(wx.Panel):
         self.annex_button.SetToolTip(wx.ToolTip("排列组合生成器"))
         self.annex_button.Bind(wx.EVT_BUTTON, self.permutation_and_combination)
 
+        # 用例下载按钮
+        case_download_icon = wx.Bitmap(resource_path("icon\\download.png"))
+        self.download_button = wx.BitmapButton(self, bitmap=case_download_icon)
+        self.download_button.SetToolTip(wx.ToolTip("测试计划导出"))
+        self.download_button.Bind(wx.EVT_BUTTON, self.case_plan_download)
+
         # 用例筛选下拉框
         # 固定宽度
         fixed_width = 200
@@ -161,6 +167,7 @@ class TestCasesPanel(wx.Panel):
         buttonSizer.Add(self.config_button, 0, wx.ALL, 5)
         buttonSizer.Add(self.status_button, 0, wx.ALL, 5)
         buttonSizer.Add(self.annex_button, 0, wx.ALL, 5)
+        buttonSizer.Add(self.download_button, 0, wx.ALL, 5)
 
         self.testerLabel = wx.StaticText(self, label=f"测试人员: {username}")
         labelSizer.Add(self.testerLabel, 0, wx.ALL, 8)
@@ -1132,8 +1139,9 @@ class TestCasesPanel(wx.Panel):
         """查看与 ExecutionID 相关的图片，生成 HTML 文件展示图片和信息"""
 
         # 调用接口获取图片
-        response = http_manager.get_params(f'/get_images/{execution_id}')
-        images = response.get('images', [])
+        response = http_manager.post_data('/get_images', {'execution_ids': [execution_id]})
+        images_map = response.get('images', {})
+        images = images_map.get(str(execution_id), [])
         if not images:
             logger.warning(f"No images found for Execution ID {execution_id}: {response}")
             wx.MessageBox('未找到相关图片', 'Info')
@@ -1233,6 +1241,34 @@ class TestCasesPanel(wx.Panel):
         dlg.ShowModal()
         dlg.Destroy()
 
+    def case_plan_download(self, event):
+        """
+        下载整个测试计划结果
+        """
+        if not getattr(self, 'plan_id', None):
+            wx.MessageBox("请先选择要导出的测试计划！", "提示", wx.OK | wx.ICON_WARNING)
+            return
+        logger.info("----------------开始下载测试计划结果-----------------")
+        # 1. 选择保存路径
+        with wx.FileDialog(self, "保存测试计划结果", wildcard="Zip 文件 (*.zip)|*.zip",
+                           style=wx.FD_SAVE | wx.FD_OVERWRITE_PROMPT) as fileDialog:
+            if fileDialog.ShowModal() == wx.ID_CANCEL:
+                return  # 用户取消
+
+            save_path = fileDialog.GetPath()
+            # 2. 请求后端接口
+            try:
+                response = http_manager.get_file(f'/export_plan/{self.plan_id}')
+                # 3. 写入文件
+                with open(save_path, 'wb') as f:
+                    for chunk in response.iter_content(chunk_size=8192):
+                        if chunk:
+                            f.write(chunk)
+                wx.MessageBox("测试计划结果下载完成！", "提示", wx.OK | wx.ICON_INFORMATION)
+            except Exception as e:
+                logger.error(f"下载失败: {e}")
+                wx.MessageBox(f"下载失败: {e}", "错误", wx.OK | wx.ICON_ERROR)
+
     def on_download(self, grid, event):
         """
         下载用例，包含图片数据
@@ -1261,22 +1297,31 @@ class TestCasesPanel(wx.Panel):
             cell.font = bold_font
 
         # 填充数据
+        # 1. 收集所有 ExecutionID
+        execution_id_list = []
+        row_to_execution_id = {}
         for row in range(grid.GetNumberRows()):
-            # 获取当前行的 ExecutionID
             execution_id = self.row_to_execution_id.get(row)
-            image_data = ""
-
-            # 如果 ExecutionID 存在，调用接口获取图片数据
             if execution_id:
-                try:
-                    response = http_manager.get_params(f'/get_images/{execution_id}')
-                    images = response.get('images', [])
-                    if images:
-                        # 将图片的 URL 或 Base64 数据拼接为字符串
-                        image_data = str(images)
-                # 客观场景是不用上传图片的
-                except BaseException as e:
-                    logger.warning(f"下载用例图片时出现错误: {e}")
+                execution_id_list.append(execution_id)
+                row_to_execution_id[row] = execution_id
+        # 2. 批量请求图片数据
+        images_map = {}
+        if execution_id_list:
+            try:
+                response = http_manager.post_data('/get_images', {'execution_ids': execution_id_list})
+                images_map = response.get('images', {})
+            except Exception as e:
+                logger.warning(f"批量下载用例图片时出现错误: {e}")
+
+        # 3. 填充数据
+        for row in range(grid.GetNumberRows()):
+            execution_id = row_to_execution_id.get(row)
+            image_data = ""
+            if execution_id:
+                images = images_map.get(str(execution_id), [])
+                if images:
+                    image_data = str(images)  # 或拼接URL字符串等
 
             # 获取当前行的所有单元格数据（排除第 0 列）
             row_data = [grid.GetCellValue(row, col) for col in range(1, grid.GetNumberCols() - 1)]
@@ -1285,9 +1330,9 @@ class TestCasesPanel(wx.Panel):
             # 写入 Excel 文件
             ws.append(row_data)
 
-            # 根据测试结果设置单元格背景颜色
+            # 设置单元格背景色
             if row_data[0] == 'Pass':
-                for cell in ws[row + 2]:  # Excel行列都是从1开始计数，标题行占据第1行
+                for cell in ws[row + 2]:
                     cell.fill = PatternFill(start_color="90EE90", end_color="90EE90", fill_type="solid")
             elif row_data[0] == 'Fail' or row_data[0] == 'Block':
                 for cell in ws[row + 2]:
@@ -1504,7 +1549,7 @@ class PermutationDialog(wx.Dialog):
     def submit_to_backend(self, plan_name, project_name, project_phase, all_case, file_path):
         # 构造请求数据
         model_names = ["DefaultModel"]
-        workloading = str(len(all_case)*5)+'(Min)'  # 每条case默认5分钟
+        workloading = str(len(all_case) * 5) + '(Min)'  # 每条case默认5分钟
         case_data = {
             'plan_name': plan_name,
             'project_phase': project_phase,

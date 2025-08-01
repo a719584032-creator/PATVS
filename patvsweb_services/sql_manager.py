@@ -6,6 +6,7 @@ from common.logs import logger
 import os
 import math
 from werkzeug.security import generate_password_hash, check_password_hash
+from config_manager.config import env_config
 import re
 
 
@@ -432,6 +433,55 @@ class TestCaseManager:
         result = self.cursor.fetchall()
         logger.info(result)
         return result
+
+    def select_case_status_by_plan_id(self, plan_id):
+        # 查询计划名
+        self.cursor.execute("SELECT plan_name FROM testplan WHERE id = %s", (plan_id,))
+        plan_name = self.cursor.fetchone()[0]
+
+        # 查询所有机型
+        self.cursor.execute("""
+               SELECT m.ModelID, m.ModelName
+               FROM testplanmodel tpm
+               JOIN model m ON tpm.ModelID = m.ModelID
+               WHERE tpm.PlanID = %s
+           """, (plan_id,))
+        models = self.cursor.fetchall()  # [(ModelID, ModelName), ...]
+
+        # 查询所有 sheet
+        self.cursor.execute("""
+               SELECT id, sheet_name FROM testsheet WHERE plan_id = %s
+           """, (plan_id,))
+        sheets = self.cursor.fetchall()  # [(sheet_id, sheet_name), ...]
+
+        # 组织数据
+        plan_data = {}
+        for model_id, model_name in models:
+            plan_data[model_name] = {}
+            for sheet_id, sheet_name in sheets:
+                # 查询该机型该sheet下所有用例及执行结果
+                self.cursor.execute("""
+                       SELECT
+                           te.TestResult, te.TestTime, te.StartTime, te.EndTime,
+                           GROUP_CONCAT(CONCAT(IFNULL(tcc.CommentTime, 'N/A'), ': ', IFNULL(tcc.Comment, 'No Comment')) ORDER BY tcc.CommentTime ASC SEPARATOR '\n') AS Comment,
+                           tc.CaseTitle, tc.PreConditions, tc.CaseSteps, tc.ExpectedResult,
+                           te.ExecutionID, te.ModelID, te.CaseID, tc.sheet_id,
+                           te.FailCount, te.BlockCount
+                       FROM testcase tc
+                       LEFT JOIN testexecution te ON te.CaseID = tc.CaseID AND te.ModelID = %s
+                       LEFT JOIN testcasecomments tcc ON tcc.ExecutionID = te.ExecutionID
+                       WHERE tc.sheet_id = %s
+                       GROUP BY
+                           te.TestResult, te.TestTime, te.StartTime, te.EndTime,
+                           tc.CaseTitle, tc.PreConditions, tc.CaseSteps, tc.ExpectedResult,
+                           te.ExecutionID, te.ModelID, te.CaseID, tc.sheet_id,
+                           te.FailCount, te.BlockCount
+                       ORDER BY tc.CaseID ASC
+                   """, (model_id, sheet_id))
+                cases = self.cursor.fetchall()
+                plan_data[model_name][sheet_name] = cases
+
+        return plan_name, plan_data
 
     def select_all_plan_names(self):
         query = "SELECT plan_name FROM TestPlan "
@@ -1267,14 +1317,53 @@ class TestCaseManager:
         logger.info(execution_ids)
         return [execution_id[0] for execution_id in execution_ids]
 
-    def select_images_by_execution_id(self, execution_id):
-        query = """
-        SELECT * FROM testcase_image WHERE ExecutionID = %s
+    # def select_images_by_execution_id(self, execution_id):
+    #     query = """
+    #     SELECT * FROM testcase_image WHERE ExecutionID = %s
+    #     """
+    #     self.cursor.execute(query, (execution_id,))
+    #     images = self.cursor.fetchall()
+    #     logger.warning(images)
+    #     return images
+
+    def select_images_by_execution_ids(self, execution_ids, host_url):
         """
-        self.cursor.execute(query, (execution_id,))
+        查询并返回指定 execution_id 的图片详细信息列表
+        """
+
+        if not execution_ids:
+            return []
+
+        query = f"""
+        SELECT * FROM testcase_image WHERE ExecutionID IN ({','.join(['%s'] * len(execution_ids))})
+        """
+        self.cursor.execute(query, tuple(execution_ids))
         images = self.cursor.fetchall()
-        logger.warning(images)
-        return images
+        if not images:
+            return []
+
+        upload_root = env_config.global_setting.image_path
+        images_map = {}
+        for image in images:
+            execution_id = str(image[1])
+            file_path = image[3]  # 第4列是文件路径
+            if not os.path.exists(file_path):
+                logger.warning(f"File not found: {file_path}")
+                continue
+
+            relative_path = os.path.relpath(file_path, upload_root)
+            image_info = {
+                'execution_id': image[1],
+                'original_file_name': image[2],  # 第3列
+                'stored_file_name': image[7],  # 第8列
+                'file_path': file_path,
+                'file_size': image[4],  # 第5列
+                'mime_type': image[5],  # 第6列
+                'time': image[6].strftime('%Y-%m-%d %H:%M:%S') if image[6] else None,  # 第7列
+                'url': host_url + 'uploads/' + relative_path.replace('\\', '/')
+            }
+            images_map.setdefault(execution_id, []).append(image_info)
+        return images_map
 
     def update_case_titles(self, cases):
         # cases: [{'case_id': int, 'case_title': str}]

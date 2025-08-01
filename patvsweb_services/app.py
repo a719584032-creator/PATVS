@@ -1,5 +1,8 @@
+import io
+import json
 import sys
 import os
+import zipfile
 
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 import boto3
@@ -16,6 +19,10 @@ from mysql.connector.pooling import MySQLConnectionPool
 from patvsweb_services.sql_manager import TestCaseManager
 from functools import wraps
 from werkzeug.middleware.proxy_fix import ProxyFix
+from flask import send_file
+from openpyxl import Workbook
+from openpyxl.styles import PatternFill
+
 
 
 app = Flask(__name__)
@@ -90,6 +97,8 @@ def update_start_time(current_user):
     cursor = conn.cursor()
     try:
         manager = TestCaseManager(conn, cursor)
+        now = datetime.datetime.now()
+        start_time = now.strftime('%Y-%m-%d %H:%M:%S')
         manager.update_start_time_by_case_id(case_id, model_id, start_time)
         conn.commit()
         return jsonify({'message': 'Start time updated successfully.'}), 200
@@ -425,6 +434,101 @@ def get_cases_status(sheet_id, model_id):
         return jsonify(formatted_cases), 200
     except Exception as e:
         logger.error(f"An error occurred: {e}")
+        return jsonify({'error': str(e)}), 500
+    finally:
+        cursor.close()
+        conn.close()
+
+@app.route('/export_plan/<int:plan_id>', methods=['GET'])
+def export_plan(plan_id):
+    logger.info(f"Fetching cases for plan_id: {plan_id}")
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    try:
+        manager = TestCaseManager(conn, cursor)
+        plan_name, plan_data = manager.select_case_status_by_plan_id(plan_id)
+        zip_buffer = io.BytesIO()
+        with zipfile.ZipFile(zip_buffer, 'w', zipfile.ZIP_DEFLATED) as zip_file:
+            for model_name, sheets in plan_data.items():
+                logger.warning(f"model_name: {model_name}, sheet_names: {list(sheets.keys())}")
+                wb = Workbook()
+                default_sheet = wb.active
+                created_sheet = False
+                for sheet_name, cases in sheets.items():
+                    logger.warning(f"  sheet: {sheet_name}, case count: {len(cases)}")
+                    ws = wb.create_sheet(title=sheet_name[:31])  # Excel sheet名最长31字符
+                    ws.append([
+                        '测试结果', '测试耗时(S)', '用例标题', '前置条件', '用例步骤', '预期结果',
+                        '开始时间', '完成时间', '评论', '失败次数', '阻塞次数', '查看图片'
+                    ])
+                    # 1. 批量收集execution_id
+                    execution_id_list = []
+                    for case in cases:
+                        execution_id = case[9]  # 最后一个字段
+                        if execution_id:
+                            execution_id_list.append(execution_id)
+
+                    # 2. 一次性查出所有图片信息
+                    images_map = {}
+                    if execution_id_list:
+                        images_map = manager.select_images_by_execution_ids(execution_id_list, request.host_url)
+
+                    # 3. 逐行写入
+                    for case in cases:
+                        (
+                            test_result, test_time, start_time, end_time, comment,
+                            case_title, pre_conditions, case_steps, expected_result,
+                            execution_id, model_id, case_id, sheet_id, fail_count, block_count
+                        ) = case
+                        # 格式化时间
+                        start_time_fmt = start_time.strftime('%Y-%m-%d %H:%M:%S') if start_time else ''
+                        end_time_fmt = end_time.strftime('%Y-%m-%d %H:%M:%S') if end_time else ''
+                        # Comment处理
+                        comment_fmt = '' if comment == "N/A: No Comment" else comment
+                        # 取图片
+                        image_data = ''
+                        if execution_id and images_map:
+                            images = images_map.get(str(execution_id), [])
+                            if images:
+                                image_data = json.dumps(images, ensure_ascii=False)  # 保证中文不转义
+
+                        # 写入Excel时不写入ID
+                        row_data= [
+                            test_result, test_time, case_title, pre_conditions, case_steps, expected_result,
+                            start_time_fmt, end_time_fmt, comment_fmt, fail_count, block_count, image_data
+                        ]
+                        ws.append(row_data)
+
+                        # 设置单元格背景色（注意：ws.append后，当前行号=ws.max_row）
+                        fill = None
+                        if row_data[0] == 'Pass':
+                            fill = PatternFill(start_color="90EE90", end_color="90EE90", fill_type="solid")
+                        elif row_data[0] == 'Fail' or row_data[0] == 'Block':
+                            fill = PatternFill(start_color="FF6347", end_color="FF6347", fill_type="solid")
+                        if fill:
+                            for cell in ws[ws.max_row]:
+                                cell.fill = fill
+                    created_sheet = True
+                if created_sheet:
+                    wb.remove(default_sheet)
+                else:
+                    default_sheet.title = "无数据"
+                    default_sheet.append(["没有可导出的用例"])
+                    # 保存到内存
+                xlsx_buffer = io.BytesIO()
+                wb.save(xlsx_buffer)
+                xlsx_buffer.seek(0)
+                zip_path = f"{model_name}/{plan_name}.xlsx"
+                zip_file.writestr(zip_path, xlsx_buffer.read())
+        zip_buffer.seek(0)
+        return send_file(
+            zip_buffer,
+            mimetype='application/zip',
+            as_attachment=True,
+            download_name=f"{plan_name}.zip"
+        )
+    except Exception as e:
+        logger.error(f"Export error: {e}")
         return jsonify({'error': str(e)}), 500
     finally:
         cursor.close()
@@ -989,53 +1093,22 @@ def get_execution_ids(current_user):
 #     except Exception as e:
 #         logger.error(f"Error generating presigned URL: {e}")
 #         return None
-@app.route('/get_images/<int:execution_id>', methods=['GET'])
-def get_images(execution_id):
-    if not execution_id:
-        return jsonify({'error': 'execution_id is required'}), 400
+@app.route('/get_images', methods=['POST'])
+def get_images():
+    data = request.json
+    execution_ids = data.get('execution_ids')
+    if not execution_ids or not isinstance(execution_ids, list):
+        return jsonify({'error': 'execution_ids must be a non-empty list'}), 400
 
     conn = get_db_connection()
     cursor = conn.cursor()
     manager = TestCaseManager(conn, cursor)
     try:
-        # 查询数据库获取图片信息
-        images = manager.select_images_by_execution_id(execution_id)
-        if not images:
-            return jsonify({'error': 'No images found for the given execution_id'}), 404
-
-        # 从配置文件中获取存储路径
-        upload_root = env_config.global_setting.image_path
-
-        # 构建返回的图片信息列表，包括文件访问路径
-        images_data = []
-        for image in images:
-            file_path = image[3]  # 数据库中存储的文件路径
-            if not os.path.exists(file_path):  # 检查文件是否存在
-                logger.error(f"File not found: {file_path}")
-                continue
-
-            # 计算文件的相对路径
-            relative_path = os.path.relpath(file_path, upload_root)
-
-            # 构建图片信息
-            image_info = {
-                'original_file_name': image[2],
-                'stored_file_name': image[7],
-                'file_path': file_path,
-                'file_size': image[4],
-                'mime_type': image[5],
-                'time': image[6].strftime('%Y-%m-%d %H:%M:%S') if image[6] else None,
-                'url': request.host_url + 'uploads/' + relative_path  # 构建访问 URL
-            }
-            images_data.append(image_info)
-
-        logger.info(images_data)
-        return jsonify({'execution_id': execution_id, 'images': images_data}), 200
-
+        images_data = manager.select_images_by_execution_ids(execution_ids, request.host_url)
+        return jsonify({'images': images_data}), 200
     except Exception as e:
         logger.error(f"Failed to retrieve images: {e}")
         return jsonify({'error': 'Failed to retrieve images'}), 500
-
     finally:
         cursor.close()
         conn.close()
@@ -1076,6 +1149,15 @@ def modify_case_titles():
     finally:
         cursor.close()
         conn.close()
+
+@app.route('/app/update', methods=['GET'])
+def get_update_info():
+    return jsonify({
+        "version": env_config.global_setting.version,
+        "desc": "修复若干bug，提升体验",
+        #"url": f"{env_config.global_setting.protocol}://{env_config.global_setting.domain}/app/update/{env_config.global_setting.app_name}"
+        "url": f"https://patvs.lenovo.com/app/update/{env_config.global_setting.app_name}"
+    })
 
 
 if __name__ == '__main__':

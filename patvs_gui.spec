@@ -1,8 +1,18 @@
 # -*- mode: python ; coding: utf-8 -*-
 import glob
+import re
 
 # 动态获取 conf 目录下的所有文件
 conf_files = [(file, 'conf') for file in glob.glob('D:\\PATVS\\conf\\*')]
+
+
+version = "unknown"
+with open(r'D:\PATVS\conf\env.default', encoding='utf-8') as f:
+    for line in f:
+        match = re.match(r'VERSION\s*=\s*["\']?([^"\']+)["\']?', line)
+        if match:
+            version = match.group(1)
+            break
 
 # 设置资源文件和目录
 added_files = [
@@ -16,7 +26,7 @@ hidden_imports = [
     'loguru',
     'win32api',
     'win32gui',
-    'win32con'
+    'win32con',
 ]
 
 a = Analysis(
@@ -39,7 +49,7 @@ exe = EXE(
     a.binaries,
     a.datas,
     [],
-    name='Test Tracking System',
+    name=f'TestTrackingSystem-{version}',
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,

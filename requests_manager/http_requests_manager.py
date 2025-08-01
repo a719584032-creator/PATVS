@@ -11,10 +11,10 @@ class HttpRequestManager:
     def __init__(self, base_url):
         self.base_url = base_url
 
-    def get_params(self, endpoint, params=None, token=None):
+    def get_params(self, endpoint, params=None, token=None, **kwargs):
         try:
             headers = {'x-access-tokens': token}
-            response = requests.get(f'{self.base_url}{endpoint}', params=params, headers=headers, verify=False)
+            response = requests.get(f'{self.base_url}{endpoint}', params=params, headers=headers, verify=False, **kwargs)
             response.raise_for_status()
             return response.json()
         except requests.RequestException as e:
@@ -97,6 +97,32 @@ class HttpRequestManager:
             return data
         except requests.RequestException as e:
             logger.error(f'HTTP GET request to /get_cases failed: {e}')
+            raise
+    def get_file(self, endpoint, params=None, token=None, save_path=None, **kwargs):
+        """
+        下载文件型接口并保存到本地
+        :param endpoint: 接口路径
+        :param params: 查询参数
+        :param token: 鉴权token
+        :param save_path: 本地保存路径
+        :param kwargs: 其他requests参数
+        :return: 本地保存路径
+        :raises: requests.RequestException
+        """
+        try:
+            headers = {'x-access-tokens': token}
+            response = requests.get(
+                f'{self.base_url}{endpoint}',
+                params=params,
+                headers=headers,
+                stream=True,  # 关键点：流式下载
+                verify=False,
+                **kwargs
+            )
+            response.raise_for_status()
+            return response
+        except requests.RequestException as e:
+            logger.error(f'HTTP GET file request to {endpoint} failed: {e}')
             raise
 
 
