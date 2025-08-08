@@ -30,8 +30,8 @@ class TestCaseManager:
             raise logger.error(f"未找到对应的用例标题，CaseID: {case_id}")
         case_title = case_title[0]
 
-        # 判断标题是否包含 {b}
-        if '{b}' in case_title:
+        # 判断标题是否包含 [通用]
+        if '[通用]' in case_title:
             # 获取与当前用例相关的所有机型（ModelID）
             self.cursor.execute(
                 """
@@ -104,7 +104,7 @@ class TestCaseManager:
         case_title = case_title[0]
 
         # 判断标题是否包含 {b}
-        if '{b}' in case_title:
+        if '[通用]' in case_title:
             # 获取与当前用例相关的所有机型（ModelID）
             self.cursor.execute(
                 """
@@ -269,7 +269,10 @@ class TestCaseManager:
 
                 # 插入到 TestCase 表
                 case_query = "INSERT INTO TestCase (CaseTitle, CaseSteps, ExpectedResult, sheet_id) VALUES (%s, %s, %s, %s)"
+                pattern = r"\[.+?\]"  # 匹配中括号内至少一个字符的内容
                 for case in cases:
+                    if not re.search(pattern, case['title']):
+                        raise ValueError(f"用例标题必须包含形如 [时间+1] 的内容：{case['title']}")
                     self.cursor.execute(case_query,
                                         (case['title'], case['steps'], case['expected'], sheet_id))
         except Exception as err:
@@ -621,7 +624,7 @@ class TestCaseManager:
             raise logger.error(f"未找到对应的用例标题，ExecutionID: {execution_id}")
         case_title, case_id = result
 
-        if '{b}' in case_title.lower():
+        if '[通用]' in case_title.lower():
             # 获取当前 CaseID 所有的 ExecutionID
             self.cursor.execute(
                 """
@@ -1108,8 +1111,8 @@ class TestCaseManager:
         user = self.cursor.fetchone()
         logger.info(user)
         if user and check_password_hash(user[2], password):
-            return True, user[4]
-        return False, None
+            return True, user[4], user[0]
+        return False, None, None
 
     def change_user_password(self, username, old_password, new_password):
         self.cursor.execute('SELECT * FROM users WHERE username = %s', (username,))
@@ -1202,7 +1205,7 @@ class TestCaseManager:
         case_title = case_title[0]
 
         # 判断标题是否包含 {b}（兼容大小写）
-        if '{b}' in case_title.lower():
+        if '[通用]' in case_title.lower():
             # 获取与当前用例相关的所有机型（ModelID）
             self.cursor.execute(
                 """
@@ -1375,3 +1378,184 @@ class TestCaseManager:
             "success_count": self.cursor.rowcount,
             "total": len(params)
         }
+
+    def check_plan_permission(self, plan_id, userid):
+        """检查用户是否有权限操作指定的测试计划"""
+        try:
+            # 联合查询检查用户权限：要么是计划所有者，要么是管理员
+            query = """
+                SELECT tp.id, u.role 
+                FROM testplan tp
+                JOIN users u ON u.userid = %s
+                WHERE tp.id = %s AND (tp.userid = %s OR u.role = 'admin')
+            """
+            self.cursor.execute(query, (userid, plan_id, userid))
+            result = self.cursor.fetchone()
+
+            if not result:
+                raise Exception("测试计划不存在或无权限操作")
+
+            return True
+
+        except Exception as err:
+            logger.error(f"权限检查失败: {err}")
+            raise Exception(f"权限检查失败: {err}")
+
+    def add_model_to_plan(self, plan_id, model_name, userid):
+        """为指定测试计划添加机型"""
+        try:
+            # 检查权限：测试计划所有者或管理员
+            self.check_plan_permission(plan_id, userid)
+
+            # 检查 Model 表中是否已经存在该 model_name
+            self.cursor.execute("SELECT ModelID FROM Model WHERE ModelName = %s", (model_name,))
+            model_result = self.cursor.fetchone()
+
+            if model_result:
+                model_id = model_result[0]
+            else:
+                # 插入新的 Model 记录
+                model_query = "INSERT INTO Model (ModelName) VALUES (%s)"
+                self.cursor.execute(model_query, (model_name,))
+                model_id = self.cursor.lastrowid
+                logger.info(f"新增机型 {model_name} 到 Model 表")
+
+            # 检查 TestPlanModel 表中是否已经存在该关联
+            self.cursor.execute("SELECT 1 FROM TestPlanModel WHERE PlanID = %s AND ModelID = %s",
+                                (plan_id, model_id))
+            if self.cursor.fetchone():
+                raise Exception("该机型已经关联到此测试计划")
+
+            # 插入关联记录
+            self.cursor.execute("INSERT INTO TestPlanModel (PlanID, ModelID) VALUES (%s, %s)",
+                                (plan_id, model_id))
+            logger.info(f"成功为测试计划 {plan_id} 添加机型 {model_name}")
+            return {"success": True, "message": "机型添加成功", "model_id": model_id}
+
+        except Exception as err:
+            logger.error(f"添加机型失败: {err}")
+            raise Exception(f"添加机型失败: {err}")
+
+    def remove_model_from_plan(self, plan_id, model_id, userid):
+        """从指定测试计划中删除机型关联"""
+        try:
+            # 检查权限：测试计划所有者或管理员
+            self.check_plan_permission(plan_id, userid)
+
+            # 检查关联是否存在
+            self.cursor.execute("SELECT 1 FROM TestPlanModel WHERE PlanID = %s AND ModelID = %s",
+                                (plan_id, model_id))
+            if not self.cursor.fetchone():
+                raise Exception("该机型未关联到此测试计划")
+
+            # 检查是否有相关的测试执行记录
+            self.cursor.execute("""
+                SELECT COUNT(*) FROM testexecution 
+                WHERE ModelID = %s AND CaseID IN (
+                    SELECT tc.CaseID FROM TestCase tc 
+                    JOIN TestSheet ts ON tc.sheet_id = ts.id 
+                    WHERE ts.plan_id = %s
+                )
+            """, (model_id, plan_id))
+
+            execution_count = self.cursor.fetchone()[0]
+            if execution_count > 0:
+                raise Exception(f"无法删除机型关联，存在 {execution_count} 条相关测试执行记录")
+
+            # 删除关联记录
+            self.cursor.execute("DELETE FROM TestPlanModel WHERE PlanID = %s AND ModelID = %s",
+                                (plan_id, model_id))
+            logger.info(f"成功从测试计划 {plan_id} 中删除机型 {model_id}")
+            return {"success": True, "message": "机型删除成功"}
+
+        except Exception as err:
+            logger.error(f"删除机型失败: {err}")
+            raise Exception(f"删除机型失败: {err}")
+
+    def update_model_in_plan(self, plan_id, old_model_id, new_model_name, userid):
+        """修改测试计划中的机型"""
+        try:
+            # 检查权限：测试计划所有者或管理员
+            self.check_plan_permission(plan_id, userid)
+
+            # 检查旧的关联是否存在
+            self.cursor.execute("SELECT 1 FROM TestPlanModel WHERE PlanID = %s AND ModelID = %s",
+                                (plan_id, old_model_id))
+            if not self.cursor.fetchone():
+                raise Exception("原机型未关联到此测试计划")
+
+            # 检查新机型是否存在，不存在则创建
+            self.cursor.execute("SELECT ModelID FROM Model WHERE ModelName = %s", (new_model_name,))
+            model_result = self.cursor.fetchone()
+
+            if model_result:
+                new_model_id = model_result[0]
+            else:
+                # 插入新的 Model 记录
+                model_query = "INSERT INTO Model (ModelName) VALUES (%s)"
+                self.cursor.execute(model_query, (new_model_name,))
+                new_model_id = self.cursor.lastrowid
+                logger.info(f"新增机型 {new_model_name} 到 Model 表")
+
+            # 检查新机型是否已经关联到该计划
+            if new_model_id != old_model_id:
+                self.cursor.execute("SELECT 1 FROM TestPlanModel WHERE PlanID = %s AND ModelID = %s",
+                                    (plan_id, new_model_id))
+                if self.cursor.fetchone():
+                    raise Exception("新机型已经关联到此测试计划")
+
+            # 检查是否有相关的测试执行记录
+            self.cursor.execute("""
+                SELECT COUNT(*) FROM testexecution 
+                WHERE ModelID = %s AND CaseID IN (
+                    SELECT tc.CaseID FROM TestCase tc 
+                    JOIN TestSheet ts ON tc.sheet_id = ts.id 
+                    WHERE ts.plan_id = %s
+                )
+            """, (old_model_id, plan_id))
+
+            execution_count = self.cursor.fetchone()[0]
+            if execution_count > 0:
+                # 如果有执行记录，更新执行记录中的ModelID
+                self.cursor.execute("""
+                    UPDATE testexecution SET ModelID = %s 
+                    WHERE ModelID = %s AND CaseID IN (
+                        SELECT tc.CaseID FROM TestCase tc 
+                        JOIN TestSheet ts ON tc.sheet_id = ts.id 
+                        WHERE ts.plan_id = %s
+                    )
+                """, (new_model_id, old_model_id, plan_id))
+                logger.info(f"更新了 {execution_count} 条测试执行记录的机型ID")
+
+            # 更新关联记录
+            self.cursor.execute("UPDATE TestPlanModel SET ModelID = %s WHERE PlanID = %s AND ModelID = %s",
+                                (new_model_id, plan_id, old_model_id))
+            logger.info(f"成功修改测试计划 {plan_id} 中的机型")
+            return {"success": True, "message": "机型修改成功", "new_model_id": new_model_id}
+
+        except Exception as err:
+            logger.error(f"修改机型失败: {err}")
+            raise Exception(f"修改机型失败: {err}")
+
+    def get_plan_models(self, plan_id, userid):
+        """获取测试计划关联的所有机型"""
+        try:
+            # 检查权限：测试计划所有者或管理员
+            self.check_plan_permission(plan_id, userid)
+
+            # 查询关联的机型
+            query = """
+                SELECT m.ModelID, m.ModelName 
+                FROM Model m 
+                JOIN TestPlanModel tpm ON m.ModelID = tpm.ModelID 
+                WHERE tpm.PlanID = %s
+                ORDER BY m.ModelName
+            """
+            self.cursor.execute(query, (plan_id,))
+            models = self.cursor.fetchall()
+
+            return [{"model_id": model[0], "model_name": model[1]} for model in models]
+
+        except Exception as err:
+            logger.error(f"获取计划机型失败: {err}")
+            raise Exception(f"获取计划机型失败: {err}")

@@ -23,8 +23,6 @@ from flask import send_file
 from openpyxl import Workbook
 from openpyxl.styles import PatternFill
 
-
-
 app = Flask(__name__)
 app.wsgi_app = ProxyFix(app.wsgi_app, x_proto=1, x_host=1)
 app.config['SECRET_KEY'] = 'lenovo_secret_key'
@@ -74,17 +72,18 @@ def token_required(f):
         try:
             data = jwt.decode(token, app.config['SECRET_KEY'], algorithms=["HS256"])
             current_user = data['username']
-            logger.warning(current_user)
+            current_userid = data['userid']
+            logger.info(f"User: {current_user}, UserID: {current_userid}")
         except:
             return jsonify({'error': 'Token is invalid!'}), 403
-        return f(*args, current_user=current_user, **kwargs)
+        return f(*args, current_user=current_user, current_userid=current_userid, **kwargs)
 
     return decorated
 
 
 @app.route('/update_start_time', methods=['POST'])
 @token_required
-def update_start_time(current_user):
+def update_start_time(current_user, current_userid):
     data = request.json
     case_id = data.get('case_id')
     model_id = data.get('model_id')
@@ -113,7 +112,7 @@ def update_start_time(current_user):
 
 @app.route('/update_end_time', methods=['POST'])
 @token_required
-def update_end_time(current_user):
+def update_end_time(current_user, current_userid):
     data = request.json
     case_id = data.get('case_id')
     model_id = data.get('model_id')
@@ -141,7 +140,7 @@ def update_end_time(current_user):
 
 @app.route('/insert_case', methods=['POST'])
 @token_required
-def insert_case(current_user):
+def insert_case(current_user, current_userid):
     data = request.json
     plan_name = data.get('plan_name')
     project_name = data.get('project_name')
@@ -178,7 +177,7 @@ def insert_case(current_user):
 
 @app.route('/insert_case_by_power', methods=['POST'])
 @token_required
-def insert_case_by_power(current_user):
+def insert_case_by_power(current_user, current_userid):
     data = request.json
     project_name = data.get('project_name')
     sheet_name = data.get('sheet_name')
@@ -439,6 +438,7 @@ def get_cases_status(sheet_id, model_id):
         cursor.close()
         conn.close()
 
+
 @app.route('/export_plan/<int:plan_id>', methods=['GET'])
 def export_plan(plan_id):
     logger.info(f"Fetching cases for plan_id: {plan_id}")
@@ -493,7 +493,7 @@ def export_plan(plan_id):
                                 image_data = json.dumps(images, ensure_ascii=False)  # 保证中文不转义
 
                         # 写入Excel时不写入ID
-                        row_data= [
+                        row_data = [
                             test_result, test_time, case_title, pre_conditions, case_steps, expected_result,
                             start_time_fmt, end_time_fmt, comment_fmt, fail_count, block_count, image_data
                         ]
@@ -586,7 +586,7 @@ def get_case_result():
 
 @app.route('/reset_case_result', methods=['POST'])
 @token_required
-def reset_case_result(current_user):
+def reset_case_result(current_user, current_userid):
     data = request.json
     execution_id = data.get('execution_id')
     if not execution_id:
@@ -712,7 +712,6 @@ def add_user():
         conn.close()
 
 
-
 @app.route('/login', methods=['POST'])
 def validate_user():
     data = request.json
@@ -727,13 +726,14 @@ def validate_user():
     cursor = conn.cursor()
     try:
         manager = TestCaseManager(conn, cursor)
-        valid, role = manager.validate_user(username, password)
+        valid, role, userid = manager.validate_user(username, password)
         if valid:
             token = jwt.encode({
                 'username': username,
+                'userid': userid,
                 'exp': datetime.datetime.utcnow() + datetime.timedelta(hours=96)
             }, app.config['SECRET_KEY'], algorithm="HS256")
-            return jsonify({'token': token, 'role': role})
+            return jsonify({'token': token, 'role': role, 'userid': userid, 'username': username})
         else:
             return jsonify({'error': 'Invalid credentials'}), 401
     except Exception as e:
@@ -939,7 +939,7 @@ def generate_unique_filename(original_filename):
 #         conn.close()
 @app.route('/upload-images', methods=['POST'])
 @token_required
-def upload_image(current_user):
+def upload_image(current_user, current_userid):
     image_files = request.files.getlist('image_files')
     case_id = request.form.get('case_id')
     model_id = request.form.get('model_id')
@@ -1011,9 +1011,10 @@ def upload_image(current_user):
         cursor.close()
         conn.close()
 
+
 @app.route('/get_execution_ids', methods=['POST'])
 @token_required
-def get_execution_ids(current_user):
+def get_execution_ids(current_user, current_userid):
     data = request.json
     case_ids = data.get('case_ids')
     model_id = data.get('model_id')
@@ -1150,15 +1151,91 @@ def modify_case_titles():
         cursor.close()
         conn.close()
 
+
 @app.route('/app/update', methods=['GET'])
 def get_update_info():
     return jsonify({
         "version": env_config.global_setting.version,
         "desc": "修复若干bug，提升体验",
-        #"url": f"{env_config.global_setting.protocol}://{env_config.global_setting.domain}/app/update/{env_config.global_setting.app_name}"
+        # "url": f"{env_config.global_setting.protocol}://{env_config.global_setting.domain}/app/update/{env_config.global_setting.app_name}"
         "url": f"https://patvs.lenovo.com/app/update/{env_config.global_setting.app_name}"
     })
 
 
+@app.route('/update/plan/<int:plan_id>/models', methods=['POST'])
+@token_required
+def add_model_to_plan_api(current_user, current_userid, plan_id):
+    """为测试计划添加机型"""
+    data = request.get_json()
+    model_name = data.get('model_name')
+    if not model_name:
+        return jsonify({
+            "success": False,
+            "message": "机型名称或者userId不能为空"
+        }), 400
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    try:
+        manager = TestCaseManager(conn, cursor)
+        result = manager.add_model_to_plan(plan_id, model_name, current_userid)
+        conn.commit()
+        return jsonify(result), 200
+
+    except Exception as e:
+        conn.rollback()
+        return jsonify({
+            "success": False,
+            "message": str(e)
+        }), 500
+
+
+@app.route('/update/plan/<int:plan_id>/models/<int:model_id>', methods=['DELETE'])
+@token_required
+def remove_model_from_plan_api(current_user, current_userid, plan_id, model_id):
+    """从测试计划中删除机型"""
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    manager = TestCaseManager(conn, cursor)
+    try:
+        result = manager.remove_model_from_plan(plan_id, model_id, current_userid)
+        conn.commit()
+        return jsonify(result), 200
+
+    except Exception as e:
+        conn.rollback()
+        return jsonify({
+            "success": False,
+            "message": str(e)
+        }), 500
+
+
+@app.route('/update/plan/<int:plan_id>/models/<int:model_id>', methods=['PUT'])
+@token_required
+def update_model_in_plan_api(current_user, current_userid, plan_id, model_id):
+    """修改测试计划中的机型"""
+    data = request.get_json()
+    new_model_name = data.get('model_name')
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    manager = TestCaseManager(conn, cursor)
+    try:
+        if not new_model_name:
+            return jsonify({
+                "success": False,
+                "message": "新机型名称不能为空"
+            }), 400
+        result = manager.update_model_in_plan(plan_id, model_id, new_model_name, current_userid)
+        conn.commit()
+        return jsonify(result), 200
+
+    except Exception as e:
+        conn.rollback()
+        return jsonify({
+            "success": False,
+            "message": str(e)
+        }), 500
+
+
 if __name__ == '__main__':
-    app.run(debug=env_config.global_setting.is_debug, host=env_config.global_setting.domain, port=env_config.global_setting.port)
+    app.run(debug=env_config.global_setting.is_debug, host=env_config.global_setting.domain,
+            port=env_config.global_setting.port)

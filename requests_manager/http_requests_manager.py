@@ -14,7 +14,8 @@ class HttpRequestManager:
     def get_params(self, endpoint, params=None, token=None, **kwargs):
         try:
             headers = {'x-access-tokens': token}
-            response = requests.get(f'{self.base_url}{endpoint}', params=params, headers=headers, verify=False, **kwargs)
+            response = requests.get(f'{self.base_url}{endpoint}', params=params, headers=headers, verify=False,
+                                    **kwargs)
             response.raise_for_status()
             return response.json()
         except requests.RequestException as e:
@@ -42,10 +43,33 @@ class HttpRequestManager:
             logger.error(f'HTTP POST request to {endpoint} failed: {e}')
             raise
 
+    def delete_data(self, endpoint, token=None):
+        """发送 DELETE 请求"""
+        try:
+            headers = {'x-access-tokens': token}
+            response = requests.delete(f"{self.base_url}{endpoint}", headers=headers, verify=False)
+            #response.raise_for_status()
+            return response.json()
+        except requests.exceptions.RequestException as e:
+            logger.error(f"DELETE request failed: {e}")
+            raise
+
+    def put_data(self, endpoint, data=None, token=None):
+        """发送 PUT 请求"""
+        try:
+            headers = {'x-access-tokens': token}
+            response = requests.put(f"{self.base_url}{endpoint}", json=data, headers=headers, verify=False)
+            #response.raise_for_status()
+            return response.json()
+        except requests.exceptions.RequestException as e:
+            logger.error(f"PUT request failed: {e}")
+            raise
+
     def get_plan_names(self, userid, project_name, token=None):
         try:
             headers = {'x-access-tokens': token}
-            response = requests.get(f'{self.base_url}/get_plan_names/{userid}/{project_name}', headers=headers, verify=False)
+            response = requests.get(f'{self.base_url}/get_plan_names/{userid}/{project_name}', headers=headers,
+                                    verify=False)
             response.raise_for_status()
             data = response.json()
             return data.get('plan_names')
@@ -90,7 +114,8 @@ class HttpRequestManager:
     def get_cases_by_sheet_id(self, sheet_id, model_id, token=None):
         try:
             headers = {'x-access-tokens': token}
-            response = requests.get(f'{self.base_url}/get_cases_status/{sheet_id}/{model_id}', headers=headers, verify=False)
+            response = requests.get(f'{self.base_url}/get_cases_status/{sheet_id}/{model_id}', headers=headers,
+                                    verify=False)
             response.raise_for_status()
             data = response.json()
             logger.warning(data)
@@ -98,6 +123,7 @@ class HttpRequestManager:
         except requests.RequestException as e:
             logger.error(f'HTTP GET request to /get_cases failed: {e}')
             raise
+
     def get_file(self, endpoint, params=None, token=None, save_path=None, **kwargs):
         """
         下载文件型接口并保存到本地
@@ -130,7 +156,6 @@ def load_config(env):
     with open('config.json', 'r') as file:
         config = json.load(file)
         return config.get(env, {})
-
 
 
 # # 配置管理类实例

@@ -158,6 +158,12 @@ class TestAdminPanel(wx.Panel):
         self.add_user_button = wx.Button(self, label="添加用户")
         self.add_user_button.Bind(wx.EVT_BUTTON, self.add_user)
 
+        self.manage_models_button = wx.Button(self, label="管理机型")
+        self.manage_models_button.Bind(wx.EVT_BUTTON, self.on_manage_models)
+
+        self.case_download_button = wx.Button(self, label="用例导出")
+        self.case_download_button.Bind(wx.EVT_BUTTON, self.case_plan_download)
+
         infoSizer.Add(self.testerLabel, 0, wx.ALL, 5)
         infoSizer.AddSpacer(100)
         infoSizer.Add(self.timeLabel, 0, wx.ALL, 5)
@@ -166,6 +172,8 @@ class TestAdminPanel(wx.Panel):
         infoSizer.Add(self.modify_button, 0, wx.CENTER | wx.ALL, 5)
         infoSizer.Add(self.modify_case_title_button, 0, wx.CENTER | wx.ALL, 5)
         infoSizer.Add(self.add_user_button, 0, wx.CENTER | wx.ALL, 5)
+        infoSizer.Add(self.manage_models_button, 0, wx.CENTER | wx.ALL, 5)
+        infoSizer.Add(self.case_download_button, 0, wx.CENTER | wx.ALL, 5)
         mainSizer.Add(infoSizer, 0, wx.EXPAND)
 
         # 创建一个 notebook，用于添加多个面板
@@ -349,6 +357,35 @@ class TestAdminPanel(wx.Panel):
 
         modify_dialog.Destroy()
 
+
+    def case_plan_download(self, event):
+        """
+        下载整个测试计划结果
+        """
+        if not getattr(self, 'plan_id', None):
+            wx.MessageBox("请先选择要导出的测试计划！", "提示", wx.OK | wx.ICON_WARNING)
+            return
+        logger.info("----------------开始下载测试计划结果-----------------")
+        # 1. 选择保存路径
+        with wx.FileDialog(self, "保存测试计划结果", wildcard="Zip 文件 (*.zip)|*.zip",
+                           style=wx.FD_SAVE | wx.FD_OVERWRITE_PROMPT) as fileDialog:
+            if fileDialog.ShowModal() == wx.ID_CANCEL:
+                return  # 用户取消
+
+            save_path = fileDialog.GetPath()
+            # 2. 请求后端接口
+            try:
+                response = http_manager.get_file(f'/export_plan/{self.plan_id}')
+                # 3. 写入文件
+                with open(save_path, 'wb') as f:
+                    for chunk in response.iter_content(chunk_size=8192):
+                        if chunk:
+                            f.write(chunk)
+                wx.MessageBox("测试计划结果下载完成！", "提示", wx.OK | wx.ICON_INFORMATION)
+            except Exception as e:
+                logger.error(f"下载失败: {e}")
+                wx.MessageBox(f"下载失败: {e}", "错误", wx.OK | wx.ICON_ERROR)
+
     def check_status(self, event):
         if not self.sheet_id or not self.model_id:
             wx.MessageBox('请先选择用例', 'Warning')
@@ -431,6 +468,51 @@ class TestAdminPanel(wx.Panel):
 
         # 继续处理其他事件
         event.Skip()
+
+    def on_manage_models(self, event):
+        """管理机型"""
+        plan_name = self.plan_name_combo.GetValue()
+
+        if not plan_name:
+            wx.MessageBox('请先选择一个测试计划', '提示', wx.OK | wx.ICON_WARNING)
+            return
+
+        # 确保 plan_id 已定义
+        if not hasattr(self, 'plan_id'):
+            wx.MessageBox('请先选择一个有效的测试计划', '提示', wx.OK | wx.ICON_WARNING)
+            return
+
+        # 打开机型管理对话框
+        dialog = ModelManageDialog(self, self.plan_id, plan_name, self.token)
+        dialog.ShowModal()
+        dialog.Destroy()
+
+        # 刷新机型下拉框
+        self.refresh_model_combo()
+
+    def refresh_model_combo(self):
+        """刷新机型下拉框"""
+        if hasattr(self, 'plan_id'):
+            try:
+                # 保存当前选择
+                current_selection = self.model_name_combo.GetValue()
+
+                # 重新加载机型列表
+                model_names_with_ids = http_manager.get_params(f'/get_model_names/{self.plan_id}').get('model_names')
+
+                # 清空并重新填充
+                self.model_name_combo.Clear()
+                for model_id, model_name in model_names_with_ids:
+                    self.model_name_combo.Append(model_name, model_id)
+
+                # 尝试恢复之前的选择
+                if current_selection:
+                    index = self.model_name_combo.FindString(current_selection)
+                    if index != wx.NOT_FOUND:
+                        self.model_name_combo.SetSelection(index)
+
+            except Exception as e:
+                logger.error(f"刷新机型列表失败: {e}")
 
     def on_view_image_click(self, execution_id):
         """查看与 ExecutionID 相关的图片，生成 HTML 文件展示图片和信息"""
@@ -643,6 +725,7 @@ class ModifyDialog(wx.Dialog):
         else:
             return  # 阻止其他字符输入
 
+
 class ButtonRenderer(wx.grid.GridCellRenderer):
     """自定义按钮渲染器，仅显示蓝色字体"""
 
@@ -776,3 +859,236 @@ class AddUserDialog(wx.Dialog):
             "is_admin": self.admin_checkbox.GetValue()
         }
 
+
+class ModelEditDialog(wx.Dialog):
+    def __init__(self, parent, title, model_name=""):
+        super().__init__(parent, title=title, size=(400, 200))
+
+        # 创建主布局
+        main_sizer = wx.BoxSizer(wx.VERTICAL)
+
+        # 机型名称输入
+        name_sizer = wx.BoxSizer(wx.HORIZONTAL)
+        name_label = wx.StaticText(self, label="机型名称:")
+        self.name_text = wx.TextCtrl(self, value=model_name, size=(250, -1))
+
+        name_sizer.Add(name_label, 0, wx.ALL | wx.CENTER, 5)
+        name_sizer.Add(self.name_text, 1, wx.ALL | wx.EXPAND, 5)
+
+        main_sizer.Add(name_sizer, 0, wx.EXPAND | wx.ALL, 10)
+
+        # 按钮
+        button_sizer = wx.BoxSizer(wx.HORIZONTAL)
+        ok_button = wx.Button(self, wx.ID_OK, "确定")
+        cancel_button = wx.Button(self, wx.ID_CANCEL, "取消")
+
+        button_sizer.Add(ok_button, 0, wx.ALL, 5)
+        button_sizer.Add(cancel_button, 0, wx.ALL, 5)
+
+        main_sizer.Add(button_sizer, 0, wx.CENTER | wx.ALL, 10)
+
+        # 绑定事件
+        ok_button.Bind(wx.EVT_BUTTON, self.on_ok)
+        cancel_button.Bind(wx.EVT_BUTTON, self.on_cancel)
+
+        self.SetSizer(main_sizer)
+
+        # 设置焦点到文本框
+        self.name_text.SetFocus()
+        self.name_text.SelectAll()
+
+    def on_ok(self, event):
+        """确定按钮事件"""
+        model_name = self.name_text.GetValue().strip()
+        if not model_name:
+            wx.MessageBox("机型名称不能为空", "提示", wx.OK | wx.ICON_WARNING)
+            return
+
+        self.EndModal(wx.ID_OK)
+
+    def on_cancel(self, event):
+        """取消按钮事件"""
+        self.EndModal(wx.ID_CANCEL)
+
+    def get_model_name(self):
+        """获取机型名称"""
+        return self.name_text.GetValue().strip()
+
+
+class ModelManageDialog(wx.Dialog):
+    def __init__(self, parent, plan_id, plan_name, token):
+        super().__init__(parent, title=f"管理机型 - {plan_name}", size=(500, 400))
+        self.plan_id = plan_id
+        self.token = token
+
+        # 创建主布局
+        main_sizer = wx.BoxSizer(wx.VERTICAL)
+
+        # 标题
+        title_label = wx.StaticText(self, label=f"测试计划: {plan_name}")
+        title_font = title_label.GetFont()
+        title_font.PointSize += 2
+        title_font = title_font.Bold()
+        title_label.SetFont(title_font)
+        main_sizer.Add(title_label, 0, wx.ALL | wx.CENTER, 10)
+
+        # 机型列表 - 只显示ID和名称
+        self.model_list = wx.ListCtrl(self, style=wx.LC_REPORT | wx.LC_SINGLE_SEL)
+        self.model_list.AppendColumn("ID", width=80)
+        self.model_list.AppendColumn("机型名称", width=300)
+        main_sizer.Add(self.model_list, 1, wx.EXPAND | wx.ALL, 5)
+
+        # 按钮区域
+        button_sizer = wx.BoxSizer(wx.HORIZONTAL)
+
+        self.add_button = wx.Button(self, label="添加机型")
+        self.edit_button = wx.Button(self, label="编辑机型")
+        self.delete_button = wx.Button(self, label="删除机型")
+        self.refresh_button = wx.Button(self, label="刷新")
+
+        button_sizer.Add(self.add_button, 0, wx.ALL, 5)
+        button_sizer.Add(self.edit_button, 0, wx.ALL, 5)
+        button_sizer.Add(self.delete_button, 0, wx.ALL, 5)
+        button_sizer.Add(self.refresh_button, 0, wx.ALL, 5)
+
+        main_sizer.Add(button_sizer, 0, wx.CENTER | wx.ALL, 5)
+
+        # 关闭按钮
+        close_button = wx.Button(self, wx.ID_CLOSE, "关闭")
+        main_sizer.Add(close_button, 0, wx.CENTER | wx.ALL, 5)
+
+        # 绑定事件
+        self.add_button.Bind(wx.EVT_BUTTON, self.on_add_model)
+        self.edit_button.Bind(wx.EVT_BUTTON, self.on_edit_model)
+        self.delete_button.Bind(wx.EVT_BUTTON, self.on_delete_model)
+        self.refresh_button.Bind(wx.EVT_BUTTON, self.on_refresh)
+        close_button.Bind(wx.EVT_BUTTON, self.on_close)
+
+        self.SetSizer(main_sizer)
+
+        # 初始加载数据
+        self.load_models()
+
+    def load_models(self):
+        """加载机型列表"""
+        try:
+            # 调用获取机型列表的API
+            response = http_manager.get_params(f'/get_model_names/{self.plan_id}')
+
+            if 'model_names' in response:
+                models = response.get('model_names', [])
+
+                # 清空列表
+                self.model_list.DeleteAllItems()
+
+                # 填充数据
+                for i, model in enumerate(models):
+                    # model 是一个元组 (ModelID, ModelName)
+                    model_id = model[0]
+                    model_name = model[1]
+
+                    index = self.model_list.InsertItem(i, str(model_id))
+                    self.model_list.SetItem(index, 1, model_name)
+                    # 保存模型ID到列表项
+                    self.model_list.SetItemData(index, model_id)
+            else:
+                # 如果返回的是错误信息
+                error_msg = response.get('error', '未知错误')
+                wx.MessageBox(f"加载机型失败: {error_msg}", "错误", wx.OK | wx.ICON_ERROR)
+
+        except Exception as e:
+            wx.MessageBox(f"加载机型失败: {str(e)}", "错误", wx.OK | wx.ICON_ERROR)
+
+    def on_add_model(self, event):
+        """添加机型"""
+        dialog = ModelEditDialog(self, "添加机型")
+        if dialog.ShowModal() == wx.ID_OK:
+            model_name = dialog.get_model_name()
+            if model_name:
+                try:
+                    data = {'model_name': model_name}
+                    response = http_manager.post_data(
+                        f'/update/plan/{self.plan_id}/models', data=data, token=self.token)
+                    if response.get('success'):
+                        wx.MessageBox("机型添加成功", "成功", wx.OK | wx.ICON_INFORMATION)
+                        self.load_models()  # 刷新列表
+                    else:
+                        wx.MessageBox(f"添加失败: {response.get('message', '未知错误')}",
+                                      "错误", wx.OK | wx.ICON_ERROR)
+
+                except Exception as e:
+                    wx.MessageBox(f"添加失败: {str(e)}", "错误", wx.OK | wx.ICON_ERROR)
+
+        dialog.Destroy()
+
+    def on_edit_model(self, event):
+        """编辑机型"""
+        selected = self.model_list.GetFirstSelected()
+        if selected == -1:
+            wx.MessageBox("请先选择要编辑的机型", "提示", wx.OK | wx.ICON_WARNING)
+            return
+
+        # 获取当前机型信息
+        model_id = self.model_list.GetItemData(selected)
+        current_name = self.model_list.GetItemText(selected, 1)
+
+        dialog = ModelEditDialog(self, "编辑机型", current_name)
+        if dialog.ShowModal() == wx.ID_OK:
+            new_model_name = dialog.get_model_name()
+            if new_model_name and new_model_name != current_name:
+                try:
+                    data = {'model_name': new_model_name}
+                    response = http_manager.put_data(
+                        f'/update/plan/{self.plan_id}/models/{model_id}',
+                        data=data,
+                        token=self.token
+                    )
+
+                    if response.get('success'):
+                        wx.MessageBox("机型修改成功", "成功", wx.OK | wx.ICON_INFORMATION)
+                        self.load_models()  # 刷新列表
+                    else:
+                        wx.MessageBox(f"修改失败: {response.get('message', '未知错误')}",
+                                      "错误", wx.OK | wx.ICON_ERROR)
+
+                except Exception as e:
+                    wx.MessageBox(f"修改失败: {str(e)}", "错误", wx.OK | wx.ICON_ERROR)
+
+        dialog.Destroy()
+
+    def on_delete_model(self, event):
+        """删除机型"""
+        selected = self.model_list.GetFirstSelected()
+        if selected == -1:
+            wx.MessageBox("请先选择要删除的机型", "提示", wx.OK | wx.ICON_WARNING)
+            return
+
+        model_id = self.model_list.GetItemData(selected)
+        model_name = self.model_list.GetItemText(selected, 1)
+
+        # 确认删除
+        if wx.MessageBox(f"确定要删除机型 '{model_name}' 吗？\n删除后相关的测试数据也会被删除！",
+                         "确认删除", wx.YES_NO | wx.ICON_QUESTION) == wx.YES:
+            try:
+                response = http_manager.delete_data(
+                    f'/update/plan/{self.plan_id}/models/{model_id}',
+                    token=self.token
+                )
+
+                if response.get('success'):
+                    wx.MessageBox("机型删除成功", "成功", wx.OK | wx.ICON_INFORMATION)
+                    self.load_models()  # 刷新列表
+                else:
+                    wx.MessageBox(f"删除失败: {response.get('message', '未知错误')}",
+                                  "错误", wx.OK | wx.ICON_ERROR)
+
+            except Exception as e:
+                wx.MessageBox(f"删除失败: {str(e)}", "错误", wx.OK | wx.ICON_ERROR)
+
+    def on_refresh(self, event):
+        """刷新机型列表"""
+        self.load_models()
+
+    def on_close(self, event):
+        """关闭对话框"""
+        self.EndModal(wx.ID_CLOSE)
