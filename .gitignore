@@ -1,2 +1,6 @@
 conf/test.env
 build
+.idea
+__pycache__/
+*.log
+
