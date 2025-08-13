@@ -14,7 +14,7 @@ import requests
 
 
 directory = "C:\\PATVS"
-VERSION = "1.0.3"
+VERSION = "1.0.4"
 if not os.path.exists(directory):
     os.makedirs(directory)
 file_dir = os.path.join(directory, 'credentials.json')

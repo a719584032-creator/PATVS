@@ -27,6 +27,8 @@ app = Flask(__name__)
 app.wsgi_app = ProxyFix(app.wsgi_app, x_proto=1, x_host=1)
 app.config['SECRET_KEY'] = 'lenovo_secret_key'
 
+
+
 # 配置S3存储桶
 BUCKET_NAME = env_config.global_setting.aws_bucket_name
 
@@ -1154,6 +1156,7 @@ def modify_case_titles():
 
 @app.route('/app/update', methods=['GET'])
 def get_update_info():
+    env_config.reload()
     return jsonify({
         "version": env_config.global_setting.version,
         "desc": "修复若干bug，提升体验",

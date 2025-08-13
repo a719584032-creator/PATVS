@@ -95,6 +95,8 @@ class TestAdminPanel(wx.Panel):
         self.username = username  # 保存用户名
         self.token = token
         self.userid = http_manager.get_params(f'/get_userid/{self.username}').get('user_id')  # 保存用户名
+        self.sheet_id = None
+        self.model_id = None
         # 创建主布局
         mainSizer = wx.BoxSizer(wx.VERTICAL)
         # 用例筛选下拉框
@@ -518,8 +520,9 @@ class TestAdminPanel(wx.Panel):
         """查看与 ExecutionID 相关的图片，生成 HTML 文件展示图片和信息"""
 
         # 调用接口获取图片
-        response = http_manager.get_params(f'/get_images/{execution_id}')
-        images = response.get('images', [])
+        response = http_manager.post_data('/get_images', {'execution_ids': [execution_id]})
+        images_map = response.get('images', {})
+        images = images_map.get(str(execution_id), [])
         if not images:
             logger.warning(f"No images found for Execution ID {execution_id}: {response}")
             wx.MessageBox('未找到相关图片', 'Info')

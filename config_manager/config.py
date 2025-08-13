@@ -61,6 +61,20 @@ class EnvConfig(metaclass=MetaSingleton):
     def _init_from_env(self):
         self.global_setting.init_from_env()
 
+    def reload(self):
+        """重新加载环境变量"""
+        # 重新加载 env 文件（可选）
+        default_cfg_path = f'{Public.get_root_path()}/conf/env.default'
+        if os.path.exists(default_cfg_path):
+            load_dotenv(dotenv_path=default_cfg_path, override=False)
+
+        cfg_path = f'{Public.get_root_path()}/conf/test.env'
+        if os.path.exists(cfg_path):
+            load_dotenv(dotenv_path=cfg_path, override=True)
+
+        # 更新内存对象
+        self.global_setting.init_from_env()
+
 
 # 加载默认配置，不覆盖系统的环境变量
 default_cfg_path = f'{Public.get_root_path()}/conf/env.default'
