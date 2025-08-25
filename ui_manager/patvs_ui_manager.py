@@ -519,6 +519,9 @@ class TestCasesPanel(wx.Panel):
         except FileNotFoundError:
             logger.info('State file not found, starting with default state.')
             self.Center()
+        except BaseException as e:
+            logger.error(f"打开文件出现异常：{e}")
+            self.Center()
 
     def set_tree_selection_by_id(self, case_id):
         root = self.tree.GetRootItem()
@@ -1141,6 +1144,10 @@ class TestCasesPanel(wx.Panel):
         # 调用接口获取图片
         response = http_manager.post_data('/get_images', {'execution_ids': [execution_id]})
         images_map = response.get('images', {})
+        if not images_map:
+            logger.warning(f"No images found for Execution ID {execution_id}: {response}")
+            wx.MessageBox('未找到相关图片', 'Info')
+            return
         images = images_map.get(str(execution_id), [])
         if not images:
             logger.warning(f"No images found for Execution ID {execution_id}: {response}")

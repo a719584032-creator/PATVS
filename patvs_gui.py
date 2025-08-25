@@ -303,7 +303,11 @@ class MainApp(wx.App):
 
     def download_update_thread(self, url):
         filename = get_filename_from_url(url)
-        save_path = os.path.join(directory, filename)
+
+        # 获取当前用户的桌面路径
+        desktop_path = os.path.join(os.path.expanduser("~"), "Desktop")
+        save_path = os.path.join(desktop_path, filename)
+
         # 进度条必须在主线程创建
         wx.CallAfter(self.start_download_progress, url, save_path)
 

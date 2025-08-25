@@ -270,11 +270,21 @@ class TestCaseManager:
                 # 插入到 TestCase 表
                 case_query = "INSERT INTO TestCase (CaseTitle, CaseSteps, ExpectedResult, sheet_id) VALUES (%s, %s, %s, %s)"
                 pattern = r"\[.+?\]"  # 匹配中括号内至少一个字符的内容
+                invalid_titles = []
                 for case in cases:
                     if not re.search(pattern, case['title']):
-                        raise ValueError(f"用例标题必须包含形如 [时间+1] 的内容：{case['title']}")
-                    self.cursor.execute(case_query,
-                                        (case['title'], case['steps'], case['expected'], sheet_id))
+                        invalid_titles.append(case['title'])
+                if invalid_titles:
+                        raise ValueError(
+                            f"Sheet '{sheet_name}' 中有 {len(invalid_titles)} 个用例标题不符合规则（必须包含形如 [时间+1] 的内容）：\n"
+                            + "\n".join(f"- {t}" for t in invalid_titles)
+                        )
+                # 全部通过验证后批量插入
+                for case in cases:
+                    self.cursor.execute(
+                        case_query, (case['title'], case['steps'], case['expected'], sheet_id)
+                    )
+
         except Exception as err:
             logger.error(f"Error: {err}")
             raise Exception(f"Error: {err}")

@@ -522,6 +522,10 @@ class TestAdminPanel(wx.Panel):
         # 调用接口获取图片
         response = http_manager.post_data('/get_images', {'execution_ids': [execution_id]})
         images_map = response.get('images', {})
+        if not images_map:
+            logger.warning(f"No images found for Execution ID {execution_id}: {response}")
+            wx.MessageBox('未找到相关图片', 'Info')
+            return
         images = images_map.get(str(execution_id), [])
         if not images:
             logger.warning(f"No images found for Execution ID {execution_id}: {response}")

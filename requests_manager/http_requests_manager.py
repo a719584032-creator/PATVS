@@ -26,7 +26,7 @@ class HttpRequestManager:
         try:
             headers = {'x-access-tokens': token}
             response = requests.post(url=f'{self.base_url}{endpoint}', json=data, headers=headers, verify=False)
-            response.raise_for_status()
+            #response.raise_for_status()
             return response.json()
         except requests.RequestException as e:
             logger.error(f'HTTP POST request to {endpoint} failed: {e}')
