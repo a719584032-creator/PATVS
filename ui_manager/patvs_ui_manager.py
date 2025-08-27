@@ -521,6 +521,12 @@ class TestCasesPanel(wx.Panel):
             self.Center()
         except BaseException as e:
             logger.error(f"打开文件出现异常：{e}")
+            # 出现异常时删除状态文件
+            try:
+                os.remove(r'C:\PATVS\window_state.json')
+                logger.info('异常恢复失败，已删除状态文件。')
+            except Exception as delete_error:
+                logger.error(f"删除状态文件失败：{delete_error}")
             self.Center()
 
     def set_tree_selection_by_id(self, case_id):
