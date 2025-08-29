@@ -90,3 +90,4 @@ def logging_by_multiple_line(level: str, message: str):
 
 if __name__ == '__main__':
     logger.info('111111111')
+    logger.info(directory)

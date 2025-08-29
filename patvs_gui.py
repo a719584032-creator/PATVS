@@ -14,7 +14,7 @@ import requests
 
 
 directory = "C:\\PATVS"
-VERSION = "1.0.5"
+VERSION = "1.0.6"
 if not os.path.exists(directory):
     os.makedirs(directory)
 file_dir = os.path.join(directory, 'credentials.json')
@@ -312,7 +312,7 @@ class MainApp(wx.App):
         wx.CallAfter(self.start_download_progress, url, save_path)
 
     def start_download_progress(self, url, save_path):
-        progress_dlg = wx.ProgressDialog("下载更新至-C://PATVS", "正在下载新版本...", maximum=100, parent=None)
+        progress_dlg = wx.ProgressDialog("下载更新至-C://用户/桌面", "正在下载新版本...", maximum=100, parent=None)
         import threading
 
         def on_progress(percent):

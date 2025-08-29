@@ -38,9 +38,9 @@ class _GlobalSetting(object):
         self.db_user = os.getenv("DB_USER")
         self.db_password = os.getenv("DB_PASSWORD")
         self.db_database = os.getenv("DB_DATABASE")
-        self.db_buffered = bool(os.getenv("DB_BUFFERED"))
-        self.is_server = bool(os.getenv("IS_SERVER"))
-        self.is_debug = bool(os.getenv("IS_DEBUG"))
+        self.db_buffered = os.getenv("DB_BUFFERED", "false").strip().lower() in ("true", "1", "yes")
+        self.is_server = os.getenv("IS_SERVER", "false").strip().lower() in ("true", "1", "yes")
+        self.is_debug = os.getenv("IS_DEBUG", "false").strip().lower() in ("true", "1", "yes")
         self.aws_user_id = os.getenv("AWS_USER_ID")
         self.aws_access_key = os.getenv("AWS_ACCESS_KEY")
         self.aws_secret_key = os.getenv("AWS_SECRET_KEY")
@@ -66,7 +66,7 @@ class EnvConfig(metaclass=MetaSingleton):
         # 重新加载 env 文件（可选）
         default_cfg_path = f'{Public.get_root_path()}/conf/env.default'
         if os.path.exists(default_cfg_path):
-            load_dotenv(dotenv_path=default_cfg_path, override=False)
+            load_dotenv(dotenv_path=default_cfg_path, override=True)
 
         cfg_path = f'{Public.get_root_path()}/conf/test.env'
         if os.path.exists(cfg_path):
@@ -93,5 +93,5 @@ if __name__ == "__main__":
     print(f"protocol: {cfg.global_setting.protocol}")
     print(f"password: {cfg.global_setting.aws_user_id}")
     print(f"domain: {cfg.global_setting.domain}")
-    print(f"domain: {cfg.global_setting.db_buffered}")
     print(type(cfg.global_setting.db_buffered))
+    print(cfg.global_setting.is_server)
