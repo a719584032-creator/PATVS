@@ -63,7 +63,7 @@ class Log(object):
                               "<cyan>{name}</cyan>:<cyan>{function}</cyan>:<cyan>{line}</cyan> - <level>{message}</level>",
                     "level": "INFO"
                 })
-            if IS_SERVER:
+            else:
                 # 如果是在服务器运行，输出到文件
                 cls._config["handlers"].append({
                     "sink": f"{directory}/patvs.log",

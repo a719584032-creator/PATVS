@@ -972,7 +972,7 @@ def upload_image(current_user, current_userid):
 
             today = datetime.datetime.now().strftime("%Y-%m-%d")
             # 构建文件存储路径
-            directory_path = os.path.join(upload_root, case_id, today)
+            directory_path = os.path.join(upload_root, today, case_id)
             os.makedirs(directory_path, exist_ok=True)  # 如果目录不存在则创建
             file_path = os.path.join(directory_path, unique_filename)
 
