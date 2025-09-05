@@ -88,7 +88,7 @@ class TestCaseManager:
             )
             logger.info(f"插入成功，CaseID: {case_id}, ModelID: {model_id}")
 
-    def update_end_time_case_id(self, case_id, model_id, case_result, comment=None):
+    def update_end_time_case_id(self, case_id, model_id, case_result, executor_name, comment=None):
         # 根据 case_id 查询 case_title
         self.cursor.execute(
             """
@@ -120,12 +120,12 @@ class TestCaseManager:
 
             # 为每个机型更新或插入结果
             for model_id_item in model_ids:
-                self._process_end_time(case_id, model_id_item, case_result, comment)
+                self._process_end_time(case_id, model_id_item, case_result, executor_name, comment)
         else:
             # 原有逻辑
-            self._process_end_time(case_id, model_id, case_result, comment)
+            self._process_end_time(case_id, model_id, case_result, executor_name, comment)
 
-    def _process_end_time(self, case_id, model_id, case_result, comment):
+    def _process_end_time(self, case_id, model_id, case_result, executor_name, comment):
         """
         处理单个机型的 end_time 更新或插入逻辑
         """
@@ -153,8 +153,8 @@ class TestCaseManager:
         self.cursor.execute("BEGIN")
         # 更新测试结果
         self.cursor.execute(
-            "UPDATE testexecution SET EndTime = %s, TestTime = %s, TestResult = %s WHERE ExecutionID = %s",
-            (formatted_now, test_time, case_result, execution_id[0])
+            "UPDATE testexecution SET EndTime = %s, TestTime = %s, TestResult = %s , executor_name = %s WHERE ExecutionID = %s",
+            (formatted_now, test_time, case_result, executor_name, execution_id[0])
         )
         # 插入评论
         if comment:
@@ -210,12 +210,19 @@ class TestCaseManager:
 
         return comments_map
 
-    def insert_case_by_filename(self, plan_name, project_name, project_phase, sheet_name, userid, workloading, filename,
+    def insert_case_by_filename(self, plan_name, project_name, project_phase, sheet_name, userid, tester, workloading,
+                                filename,
                                 cases, model_names):
         filename = os.path.basename(filename)  # 获取文件名
         try:
             # 查询是否已经存在相同的 plan_name
-            self.cursor.execute("SELECT id FROM TestPlan WHERE plan_name = %s AND userid = %s", (plan_name, userid))
+            query = """
+            SELECT id
+            FROM TestPlan
+            WHERE plan_name = %s
+              AND FIND_IN_SET(%s, REPLACE(userId, ' ', '')) > 0
+            """
+            self.cursor.execute(query, (plan_name, str(userid)))
             result = self.cursor.fetchone()
 
             if result:
@@ -224,7 +231,7 @@ class TestCaseManager:
             else:
                 # 插入新的 TestPlan 记录
                 plan_query = "INSERT INTO TestPlan (plan_name, filename, project_name, project_phase, userid) VALUES (%s, %s, %s, %s, %s)"
-                self.cursor.execute(plan_query, (plan_name, filename, project_name, project_phase, userid))
+                self.cursor.execute(plan_query, (plan_name, filename, project_name, project_phase, tester))
                 logger.warning(" 插入 testplan 表成功")
                 plan_id = self.cursor.lastrowid
 
@@ -275,10 +282,10 @@ class TestCaseManager:
                     if not re.search(pattern, case['title']):
                         invalid_titles.append(case['title'])
                 if invalid_titles:
-                        raise ValueError(
-                            f"Sheet '{sheet_name}' 中有 {len(invalid_titles)} 个用例标题不符合规则（必须包含形如 [时间+1] 的内容）：\n"
-                            + "\n".join(f"- {t}" for t in invalid_titles)
-                        )
+                    raise ValueError(
+                        f"Sheet '{sheet_name}' 中有 {len(invalid_titles)} 个用例标题不符合规则（必须包含形如 [时间+1] 的内容）：\n"
+                        + "\n".join(f"- {t}" for t in invalid_titles)
+                    )
                 # 全部通过验证后批量插入
                 for case in cases:
                     self.cursor.execute(
@@ -354,9 +361,12 @@ class TestCaseManager:
             self.cursor.execute(query)
         else:
             # 如果用户不是管理员，根据 userId 查询项目
-            query = "SELECT DISTINCT project_name FROM TestPlan WHERE userId = %s"
+            query = """
+            SELECT DISTINCT project_name
+            FROM TestPlan
+            WHERE FIND_IN_SET(%s, userId) > 0
+            """
             self.cursor.execute(query, (userid,))
-
         # 获取查询结果
         result = self.cursor.fetchall()
         # 返回项目名称列表
@@ -384,7 +394,10 @@ class TestCaseManager:
         else:
             # 如果用户不是管理员，根据 userId 和项目名称查询计划
             query = """
-            SELECT id, plan_name FROM TestPlan WHERE userId = %s AND project_name = %s
+            SELECT id, plan_name
+            FROM TestPlan
+            WHERE FIND_IN_SET(%s, userId) > 0
+              AND project_name = %s
             """
             self.cursor.execute(query, (userid, project_name))
 
@@ -398,7 +411,7 @@ class TestCaseManager:
         query = """
             SELECT m.ModelID, m.ModelName
             FROM model m
-            JOIN testplanmodel tpm ON m.ModelID = tpm.ModelID
+            JOIN testplanmodel tpm ON m.ModelID = tpm.ModelID 
             WHERE tpm.PlanID = %s
         """
         self.cursor.execute(query, (plan_id,))
@@ -420,6 +433,7 @@ class TestCaseManager:
     def select_case_status(self, model_id, sheet_id):
         query = """
         SELECT   
+            te.executor_name,
             te.TestResult,
             te.TestTime,
             te.StartTime,
@@ -541,8 +555,14 @@ class TestCaseManager:
         return result[0] if result else None
 
     def select_plan_name_by_plan_name(self, plan_name, user_id):
-        query = "SELECT plan_name FROM TestPlan WHERE plan_name = %s AND userId = %s"
-        self.cursor.execute(query, (plan_name, user_id))
+        query = """
+        SELECT plan_name
+        FROM TestPlan
+        WHERE plan_name = %s
+          AND FIND_IN_SET(%s, REPLACE(userId, ' ', '')) > 0
+        """
+        self.cursor.execute(query, (plan_name, str(user_id)))
+
         result = self.cursor.fetchone()
         logger.info(result)
         return result[0] if result else None
@@ -614,7 +634,6 @@ class TestCaseManager:
             WHERE ExecutionID = %s
         """, (execution_id,))
 
-
     def reset_case_by_execution_id(self, execution_id):
         """
         重置用例状态
@@ -652,7 +671,6 @@ class TestCaseManager:
         else:
             # 如果标题不包含 {b}，只重置当前 ExecutionID
             self._reset_case_by_execution_id(execution_id)
-
 
     def count_case_by_sheet_id(self, sheet_id):
         """
@@ -1199,7 +1217,7 @@ class TestCaseManager:
         image_id = self.cursor.fetchone()[0]
         return image_id
 
-    def insert_execution_with_image(self, case_id, model_id, case_result, images_data, comment=None):
+    def insert_execution_with_image(self, case_id, model_id, case_result, images_data, executor_name, comment=None):
         # 根据 case_id 查询 case_title
         self.cursor.execute(
             """
@@ -1231,12 +1249,12 @@ class TestCaseManager:
 
             # 针对所有相关的 ModelID 执行逻辑
             for model_id_item in model_ids:
-                self._process_execution_with_image(case_id, model_id_item, case_result, images_data, comment)
+                self._process_execution_with_image(case_id, model_id_item, case_result, images_data, executor_name, comment)
         else:
             # 单机型逻辑
-            self._process_execution_with_image(case_id, model_id, case_result, images_data, comment)
+            self._process_execution_with_image(case_id, model_id, case_result, images_data, executor_name, comment)
 
-    def _process_execution_with_image(self, case_id, model_id, case_result, images_data, comment):
+    def _process_execution_with_image(self, case_id, model_id, case_result, images_data, executor_name, comment):
         """
         处理单个机型的测试执行记录插入/更新逻辑（包括图片和评论）
         """
@@ -1264,8 +1282,8 @@ class TestCaseManager:
         self.cursor.execute("BEGIN")
         # 更新测试结果
         self.cursor.execute(
-            "UPDATE testexecution SET EndTime = %s, TestTime = %s, TestResult = %s WHERE ExecutionID = %s",
-            (formatted_now, test_time, case_result, execution_id[0])
+            "UPDATE testexecution SET EndTime = %s, TestTime = %s, TestResult = %s , executor_name = %s WHERE ExecutionID = %s",
+            (formatted_now, test_time, case_result, executor_name, execution_id[0])
         )
 
         # 插入评论

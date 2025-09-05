@@ -120,15 +120,18 @@ def update_end_time(current_user, current_userid):
     model_id = data.get('model_id')
     case_result = data.get('case_result')
     comment = data.get('comment', None)
+    executor_name = data.get('executor_name')
+    logger.warning(11111111111111111111)
     logger.info(
-        f"Updating end time for case_id: {case_id}, model_id: {model_id}, actions: {case_result}, comment: {comment}")
+        f"Updating end time for case_id: {case_id}, model_id: {model_id}, actions: {case_result}, executor_name: {executor_name} ,comment: {comment}")
+    logger.warning(11111111111111111111)
     if not case_id or not case_result:
         return jsonify({'error': 'Missing required parameters'}), 400
     conn = get_db_connection()
     cursor = conn.cursor()
     try:
         manager = TestCaseManager(conn, cursor)
-        manager.update_end_time_case_id(case_id, model_id, case_result, comment)
+        manager.update_end_time_case_id(case_id, model_id, case_result, executor_name, comment)
         conn.commit()
         return jsonify({'message': 'End time updated successfully.'}), 200
     except Exception as e:
@@ -148,7 +151,8 @@ def insert_case(current_user, current_userid):
     project_name = data.get('project_name')
     project_phase = data.get('project_phase')
     sheet_name = data.get('sheet_name')
-    userid = data.get('tester')
+    userid = data.get('userid')
+    tester = data.get('tester')
     workloading = data.get('workloading')
     filename = data.get('filename')
     cases = data.get('cases')
@@ -163,7 +167,7 @@ def insert_case(current_user, current_userid):
     cursor = conn.cursor()
     try:
         manager = TestCaseManager(conn, cursor)
-        manager.insert_case_by_filename(plan_name, project_name, project_phase, sheet_name, userid, workloading,
+        manager.insert_case_by_filename(plan_name, project_name, project_phase, sheet_name, userid, tester, workloading,
                                         filename, cases,
                                         model_name)
         conn.commit()
@@ -415,21 +419,22 @@ def get_cases_status(sheet_id, model_id):
             if comment == "N/A: No Comment":
                 comment = None
             case_dict = {
-                'TestResult': case[0],
-                'TestTime': case[1],
-                'StartTime': case[2].strftime('%Y-%m-%d %H:%M:%S') if case[2] else None,
-                'EndTime': case[3].strftime('%Y-%m-%d %H:%M:%S') if case[3] else None,
+                'executor_name': case[0],
+                'TestResult': case[1],
+                'TestTime': case[2],
+                'StartTime': case[3].strftime('%Y-%m-%d %H:%M:%S') if case[2] else None,
+                'EndTime': case[4].strftime('%Y-%m-%d %H:%M:%S') if case[3] else None,
                 'Comment': comment,
-                'CaseTitle': case[5],
-                'PreConditions': case[6],
-                'CaseSteps': case[7],
-                'ExpectedResult': case[8],
-                'ExecutionID': case[9],
-                'ModelID': case[10],
-                'CaseID': case[11],
-                'SheetID': case[12],
-                'FailCount': case[13],
-                'BlockConut': case[14]
+                'CaseTitle': case[6],
+                'PreConditions': case[7],
+                'CaseSteps': case[8],
+                'ExpectedResult': case[9],
+                'ExecutionID': case[10],
+                'ModelID': case[11],
+                'CaseID': case[12],
+                'SheetID': case[13],
+                'FailCount': case[14],
+                'BlockConut': case[15]
             }
             formatted_cases.append(case_dict)
         return jsonify(formatted_cases), 200
@@ -735,6 +740,7 @@ def validate_user():
                 'userid': userid,
                 'exp': datetime.datetime.utcnow() + datetime.timedelta(hours=96)
             }, app.config['SECRET_KEY'], algorithm="HS256")
+            logger.info({'token': token, 'role': role, 'userid': userid, 'username': username})
             return jsonify({'token': token, 'role': role, 'userid': userid, 'username': username})
         else:
             return jsonify({'error': 'Invalid credentials'}), 401
@@ -946,6 +952,7 @@ def upload_image(current_user, current_userid):
     case_id = request.form.get('case_id')
     model_id = request.form.get('model_id')
     case_result = request.form.get('case_result')
+    executor_name = request.form.get('executor_name')
     comment = request.form.get('comment', None)
 
     if not case_id or not model_id or not case_result or not image_files:
@@ -1001,7 +1008,7 @@ def upload_image(current_user, current_userid):
 
         # 插入执行记录和所有图片信息
         try:
-            execution_id = manager.insert_execution_with_image(case_id, model_id, case_result, images_data, comment)
+            execution_id = manager.insert_execution_with_image(case_id, model_id, case_result, images_data, executor_name, comment)
             conn.commit()
             return jsonify({'execution_id': execution_id, 'uploaded_images': images_data}), 200
         except Exception as e:

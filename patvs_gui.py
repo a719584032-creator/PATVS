@@ -12,7 +12,6 @@ import json
 import base64
 import requests
 
-
 directory = "C:\\PATVS"
 VERSION = "1.0.6"
 if not os.path.exists(directory):

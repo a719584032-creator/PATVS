@@ -259,10 +259,23 @@ def run_main(file_path, userid, token):
         data = MyExcel(file_path)
         data.active_sheet('Plan Information')
         plan_name = data.get_value_by_rc(1, 2)
-        logger.info(f'plan_name is {plan_name}')
         result = http_manager.get_params(f'/get_plan_name_by_planname/{plan_name}/{userid}').get('plan_exists')
         if result:
             raise ValueError(f"当前计划名: {result} 已存在，请勿重复上传")
+        username_str = data.get_value_by_rc(2, 4)
+        # 按中英文逗号分割，并去掉空格
+        usernames = [u.strip() for u in re.split(r'[，,]', username_str) if u.strip()]
+        user_ids = []
+        for uname in usernames:
+            resp = http_manager.get_params(f'/get_userid/{uname}')
+            uid = resp.get('user_id')
+            if uid:
+                user_ids.append(str(uid))
+
+        # 拼接成 "1,2,3"
+        user_ids_str = ",".join(user_ids)
+        logger.warning(user_ids_str)
+
         project_name = data.get_value_by_rc(1, 4)
         project_phase = data.get_value_by_rc(4, 4)
         # 使用正则表达式查找所有中括号内的内容
@@ -272,16 +285,18 @@ def run_main(file_path, userid, token):
         all_sheet = data.getColValues(2)[2:]
         # 实际 sheet_name 需要加上递增的前缀
         all_sheet_with_prefix = [f'{i + 1}-{val}' for i, val in enumerate(all_sheet)]
+
+        # 实际用户使用时没有按照模版标准排计划，该字段并没有使用
         all_tester = data.getColValues(14)[2:]
         all_workloading = data.getColValues(15)[2:]
         logger.info(f'all_sheet_with_prefix is {all_sheet_with_prefix}')
-        logger.info(f'all_tester is {all_tester}')
+
         sheet_and_tester_and_workloading = list(zip(all_sheet_with_prefix, all_tester, all_workloading))
         logger.info(f'sheet_and_tester_and_workloading is {sheet_and_tester_and_workloading}')
         for i in sheet_and_tester_and_workloading:
             all_case = get_all_test(file_path, i[0])
             case_data = {'plan_name': plan_name, 'project_phase': project_phase, 'project_name': project_name,
-                         'sheet_name': i[0], 'tester': userid,
+                         'sheet_name': i[0], 'userid': userid, 'tester': user_ids_str,
                          'workloading': i[2], 'cases': all_case, 'model_name': model_names, 'filename': file_path}
             http_manager.post_data('/insert_case', data=case_data, token=token)
     elif template == 'power':
@@ -298,5 +313,5 @@ def run_main(file_path, userid, token):
 
 
 if __name__ == '__main__':
-    file_name = r'C:\Users\71958\Downloads\TDMS\TDMS\Mouse Basic function test 10PB长时间运行.xlsx'
-    run_main(file_name, 'ysq', 'aaa')
+    file_name = r"C:\Users\71958\Downloads\TestPlanWithResult_Lenovo_FHD_webcam_测试1_20241018141149.xlsx"
+    run_main(file_name, 11, 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VybmFtZSI6InpoYW5na3IyIiwidXNlcmlkIjoxMywiZXhwIjoxNzU3MTQ0NTE4fQ.r7zs2ZU4HZ-JCL3UeHCcxBDhG5cmrJPIawLytno8Ogo')

@@ -690,7 +690,7 @@ class TestCasesPanel(wx.Panel):
             file = open(file_path, 'rb')
             files.append(('image_files', (os.path.basename(file_path), file, 'multipart/form-data')))
 
-        data = {'case_id': self.CaseID, 'model_id': self.model_id, 'case_result': case_result, 'comment': comment}
+        data = {'case_id': self.CaseID, 'model_id': self.model_id, 'case_result': case_result, 'executor_name': self.username, 'comment': comment}
         logger.warning(files)
         try:
 
@@ -718,7 +718,7 @@ class TestCasesPanel(wx.Panel):
                     wx.MessageBox('上传图片是必填操作，请上传图片后再继续。', '提示', wx.OK | wx.ICON_WARNING)
                     return  # 如果用户没有上传图片，则返回，阻止后续操作
             else:
-                http_manager.update_end_time_case_id(self.CaseID, self.model_id, case_result, token=self.token)
+                http_manager.update_end_time_case_id(self.CaseID, self.model_id, case_result, executor_name=self.username, token=self.token)
             wx.CallAfter(self.case_enable)
             wx.CallAfter(self.refresh_node_case_status, case_status=case_result)
             wx.CallAfter(self.update_statistics)
@@ -736,7 +736,7 @@ class TestCasesPanel(wx.Panel):
                             wx.MessageBox('上传图片是必填操作，请上传图片后再继续。', '提示', wx.OK | wx.ICON_WARNING)
                             return  # 如果用户没有上传图片，则返回，阻止后续操作
                     else:
-                        http_manager.update_end_time_case_id(self.CaseID, self.model_id, case_result,
+                        http_manager.update_end_time_case_id(self.CaseID, self.model_id, case_result, self.username,
                                                              f'Fail: {input_content}', self.token)
                     logger.info(f"Fail Button clicked, Content: {input_content}")
 
@@ -767,7 +767,8 @@ class TestCasesPanel(wx.Panel):
                 input_content = dlg.GetValue().strip()  # 获取输入的内容
                 if input_content:
                     logger.info(f"Block Button clicked, Content: {input_content}")
-                    http_manager.update_end_time_case_id(self.CaseID, self.model_id, case_result,
+                    logger.info(f"Block Button clicked, executor_name: {self.username}")
+                    http_manager.update_end_time_case_id(self.CaseID, self.model_id, case_result, self.username,
                                                          f'Block: {input_content}',
                                                          self.token)
                     # 设置事件以通知监控线程停止
@@ -1011,10 +1012,10 @@ class TestCasesPanel(wx.Panel):
 
         # 创建grid并设置行和列
         self.grid = wx.grid.Grid(dialog)
-        self.grid.CreateGrid(numRows=len(self.testCases), numCols=13)  # 增加两列用于按钮
+        self.grid.CreateGrid(numRows=len(self.testCases), numCols=14)  # 增加两列用于按钮
 
         # 设置列标题
-        cols_title = ['重置按钮', '测试结果', '测试耗时(S)', '用例标题', '前置条件',
+        cols_title = ['重置按钮', '执行人', '测试结果', '测试耗时(S)', '用例标题', '前置条件',
                       '用例步骤', '预期结果', '开始时间', '完成时间', '评论', '失败次数', '阻塞次数', '查看图片']
         for i, title in enumerate(cols_title):
             self.grid.SetColLabelValue(i, title)
@@ -1027,24 +1028,26 @@ class TestCasesPanel(wx.Panel):
                 self.row_to_execution_id[i] = execution_id  # 记录行号与 ExecutionID 的映射
 
             # 根据列标题填充数据
-            self.grid.SetCellValue(i, 1, str(case.get('TestResult', "")))
-            self.grid.SetCellValue(i, 2, str(case.get('TestTime', "")))
-            self.grid.SetCellValue(i, 3, case.get('CaseTitle', ""))
-            self.grid.SetCellValue(i, 4, str(case.get('PreConditions', "")))
-            self.grid.SetCellValue(i, 5, case.get('CaseSteps', ""))
-            self.grid.SetCellValue(i, 6, case.get('ExpectedResult', ""))
-            self.grid.SetCellValue(i, 7, str(case.get('StartTime', "") or ""))
-            self.grid.SetCellValue(i, 8, str(case.get('EndTime', "") or ""))
-            self.grid.SetCellValue(i, 9, str(case.get('Comment', "") or ""))
-            self.grid.SetCellValue(i, 10, str(case.get('FailCount', "") or ""))
-            self.grid.SetCellValue(i, 11, str(case.get('BlockConut', "") or ""))
+            self.grid.SetCellValue(i, 1, str(case.get('executor_name', "")))
+            self.grid.SetCellValue(i, 2, str(case.get('TestResult', "")))
+            self.grid.SetCellValue(i, 3, str(case.get('TestTime', "")))
+            self.grid.SetCellValue(i, 4, case.get('CaseTitle', ""))
+            self.grid.SetCellValue(i, 5, str(case.get('PreConditions', "")))
+            self.grid.SetCellValue(i, 6, case.get('CaseSteps', ""))
+            self.grid.SetCellValue(i, 7, case.get('ExpectedResult', ""))
+            self.grid.SetCellValue(i, 8, str(case.get('Actions', "")))
+            self.grid.SetCellValue(i, 9, str(case.get('StartTime', "") or ""))
+            self.grid.SetCellValue(i, 10, str(case.get('EndTime', "") or ""))
+            self.grid.SetCellValue(i, 11, str(case.get('Comment', "") or ""))
+            self.grid.SetCellValue(i, 12, str(case.get('FailCount', "") or ""))
+            self.grid.SetCellValue(i, 13, str(case.get('BlockConut', "") or ""))
 
             # 设置背景颜色
             test_result = case.get('TestResult', "")
             if test_result == 'Pass':
-                self.grid.SetCellBackgroundColour(i, 1, wx.Colour(144, 238, 144))  # 浅绿色
+                self.grid.SetCellBackgroundColour(i, 2, wx.Colour(144, 238, 144))  # 浅绿色
             elif test_result in ['Fail', 'Block']:
-                self.grid.SetCellBackgroundColour(i, 1, wx.Colour(255, 99, 71))  # 浅红色
+                self.grid.SetCellBackgroundColour(i, 2, wx.Colour(255, 99, 71))  # 浅红色
 
             # 为第一列设置“重置按钮”
             self.grid.SetCellValue(i, 0, "重置")
@@ -1101,18 +1104,19 @@ class TestCasesPanel(wx.Panel):
         self.testCases = http_manager.get_cases_by_sheet_id(self.sheet_id, self.model_id)
 
         for i, case in enumerate(self.testCases):
-            self.grid.SetCellValue(i, 1, str(case.get('TestResult', "")))
-            self.grid.SetCellValue(i, 2, str(case.get('TestTime', "")))
-            self.grid.SetCellValue(i, 3, case.get('CaseTitle', ""))
-            self.grid.SetCellValue(i, 4, str(case.get('PreConditions', "")))
-            self.grid.SetCellValue(i, 5, case.get('CaseSteps', ""))
-            self.grid.SetCellValue(i, 6, case.get('ExpectedResult', ""))
-            self.grid.SetCellValue(i, 7, str(case.get('Actions', "")))
-            self.grid.SetCellValue(i, 8, str(case.get('StartTime', "") or ""))
-            self.grid.SetCellValue(i, 9, str(case.get('EndTime', "") or ""))
-            self.grid.SetCellValue(i, 10, str(case.get('Comment', "") or ""))
-            self.grid.SetCellValue(i, 11, str(case.get('FailCount', "") or ""))
-            self.grid.SetCellValue(i, 12, str(case.get('BlockConut', "") or ""))
+            self.grid.SetCellValue(i, 1, str(case.get('executor_name', "")))
+            self.grid.SetCellValue(i, 2, str(case.get('TestResult', "")))
+            self.grid.SetCellValue(i, 3, str(case.get('TestTime', "")))
+            self.grid.SetCellValue(i, 4, case.get('CaseTitle', ""))
+            self.grid.SetCellValue(i, 5, str(case.get('PreConditions', "")))
+            self.grid.SetCellValue(i, 6, case.get('CaseSteps', ""))
+            self.grid.SetCellValue(i, 7, case.get('ExpectedResult', ""))
+            self.grid.SetCellValue(i, 8, str(case.get('Actions', "")))
+            self.grid.SetCellValue(i, 9, str(case.get('StartTime', "") or ""))
+            self.grid.SetCellValue(i, 10, str(case.get('EndTime', "") or ""))
+            self.grid.SetCellValue(i, 11, str(case.get('Comment', "") or ""))
+            self.grid.SetCellValue(i, 12, str(case.get('FailCount', "") or ""))
+            self.grid.SetCellValue(i, 13, str(case.get('BlockConut', "") or ""))
 
         self.grid.ForceRefresh()
 
@@ -1301,7 +1305,7 @@ class TestCasesPanel(wx.Panel):
         ws = wb.active
 
         # 设置列标题
-        cols_title = ['测试结果', '测试耗时(S)', '用例标题', '前置条件',
+        cols_title = ['执行人', '测试结果', '测试耗时(S)', '用例标题', '前置条件',
                       '用例步骤', '预期结果', '开始时间', '完成时间', '评论', '失败次数', '阻塞次数', '图片数据']
         # 创建一个加粗的字体
         bold_font = Font(bold=True)
