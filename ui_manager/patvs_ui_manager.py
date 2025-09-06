@@ -1035,12 +1035,11 @@ class TestCasesPanel(wx.Panel):
             self.grid.SetCellValue(i, 5, str(case.get('PreConditions', "")))
             self.grid.SetCellValue(i, 6, case.get('CaseSteps', ""))
             self.grid.SetCellValue(i, 7, case.get('ExpectedResult', ""))
-            self.grid.SetCellValue(i, 8, str(case.get('Actions', "")))
-            self.grid.SetCellValue(i, 9, str(case.get('StartTime', "") or ""))
-            self.grid.SetCellValue(i, 10, str(case.get('EndTime', "") or ""))
-            self.grid.SetCellValue(i, 11, str(case.get('Comment', "") or ""))
-            self.grid.SetCellValue(i, 12, str(case.get('FailCount', "") or ""))
-            self.grid.SetCellValue(i, 13, str(case.get('BlockConut', "") or ""))
+            self.grid.SetCellValue(i, 8, str(case.get('StartTime', "") or ""))
+            self.grid.SetCellValue(i, 9, str(case.get('EndTime', "") or ""))
+            self.grid.SetCellValue(i, 10, str(case.get('Comment', "") or ""))
+            self.grid.SetCellValue(i, 11, str(case.get('FailCount', "") or ""))
+            self.grid.SetCellValue(i, 12, str(case.get('BlockConut', "") or ""))
 
             # 设置背景颜色
             test_result = case.get('TestResult', "")
@@ -1054,8 +1053,8 @@ class TestCasesPanel(wx.Panel):
             self.grid.SetCellRenderer(i, 0, ButtonRenderer("重置"))
 
             # 为最后一列设置“查看图片按钮”
-            self.grid.SetCellValue(i, 12, "查看图片")
-            self.grid.SetCellRenderer(i, 12, ButtonRenderer("查看图片"))
+            self.grid.SetCellValue(i, 13, "查看图片")
+            self.grid.SetCellRenderer(i, 13, ButtonRenderer("查看图片"))
 
         # 禁止直接编辑单元格
         self.grid.EnableEditing(False)
@@ -1091,7 +1090,7 @@ class TestCasesPanel(wx.Panel):
             if execution_id:
                 self.on_reset_click(event, execution_id)
         # 判断点击的是“查看图片”列
-        elif col == 12:
+        elif col == 13:
             execution_id = self.row_to_execution_id.get(row)
             if execution_id:
                 self.on_view_image_click(execution_id)
@@ -1111,12 +1110,11 @@ class TestCasesPanel(wx.Panel):
             self.grid.SetCellValue(i, 5, str(case.get('PreConditions', "")))
             self.grid.SetCellValue(i, 6, case.get('CaseSteps', ""))
             self.grid.SetCellValue(i, 7, case.get('ExpectedResult', ""))
-            self.grid.SetCellValue(i, 8, str(case.get('Actions', "")))
-            self.grid.SetCellValue(i, 9, str(case.get('StartTime', "") or ""))
-            self.grid.SetCellValue(i, 10, str(case.get('EndTime', "") or ""))
-            self.grid.SetCellValue(i, 11, str(case.get('Comment', "") or ""))
-            self.grid.SetCellValue(i, 12, str(case.get('FailCount', "") or ""))
-            self.grid.SetCellValue(i, 13, str(case.get('BlockConut', "") or ""))
+            self.grid.SetCellValue(i, 8, str(case.get('StartTime', "") or ""))
+            self.grid.SetCellValue(i, 9, str(case.get('EndTime', "") or ""))
+            self.grid.SetCellValue(i, 10, str(case.get('Comment', "") or ""))
+            self.grid.SetCellValue(i, 11, str(case.get('FailCount', "") or ""))
+            self.grid.SetCellValue(i, 12, str(case.get('BlockConut', "") or ""))
 
         self.grid.ForceRefresh()
 

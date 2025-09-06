@@ -414,7 +414,7 @@ def get_cases_status(sheet_id, model_id):
         cases = manager.select_case_status(model_id, sheet_id)
         formatted_cases = []
         for case in cases:
-            comment = case[4]
+            comment = case[5]
             # 检查 comment 是否为 "N/A: No Comment"，如果是则替换为 None
             if comment == "N/A: No Comment":
                 comment = None
@@ -422,8 +422,8 @@ def get_cases_status(sheet_id, model_id):
                 'executor_name': case[0],
                 'TestResult': case[1],
                 'TestTime': case[2],
-                'StartTime': case[3].strftime('%Y-%m-%d %H:%M:%S') if case[2] else None,
-                'EndTime': case[4].strftime('%Y-%m-%d %H:%M:%S') if case[3] else None,
+                'StartTime': case[3].strftime('%Y-%m-%d %H:%M:%S') if case[3] else None,
+                'EndTime': case[4].strftime('%Y-%m-%d %H:%M:%S') if case[4] else None,
                 'Comment': comment,
                 'CaseTitle': case[6],
                 'PreConditions': case[7],

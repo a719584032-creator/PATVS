@@ -401,10 +401,10 @@ class TestAdminPanel(wx.Panel):
 
         # 创建grid并设置行和列
         self.grid = wx.grid.Grid(dialog)
-        self.grid.CreateGrid(numRows=len(self.testCases), numCols=13)  # 增加两列用于按钮
+        self.grid.CreateGrid(numRows=len(self.testCases), numCols=14)  # 增加两列用于按钮
 
         # 设置列标题
-        cols_title = ['重置按钮', '测试结果', '测试耗时(S)', '用例标题', '前置条件',
+        cols_title = ['重置按钮', '执行人', '测试结果', '测试耗时(S)', '用例标题', '前置条件',
                       '用例步骤', '预期结果', '开始时间', '完成时间', '评论', '失败次数', '阻塞次数', '查看图片']
         for i, title in enumerate(cols_title):
             self.grid.SetColLabelValue(i, title)
@@ -417,28 +417,29 @@ class TestAdminPanel(wx.Panel):
                 self.row_to_execution_id[i] = execution_id  # 记录行号与 ExecutionID 的映射
 
             # 根据列标题填充数据
-            self.grid.SetCellValue(i, 1, str(case.get('TestResult', "")))
-            self.grid.SetCellValue(i, 2, str(case.get('TestTime', "")))
-            self.grid.SetCellValue(i, 3, case.get('CaseTitle', ""))
-            self.grid.SetCellValue(i, 4, str(case.get('PreConditions', "")))
-            self.grid.SetCellValue(i, 5, case.get('CaseSteps', ""))
-            self.grid.SetCellValue(i, 6, case.get('ExpectedResult', ""))
-            self.grid.SetCellValue(i, 7, str(case.get('StartTime', "") or ""))
-            self.grid.SetCellValue(i, 8, str(case.get('EndTime', "") or ""))
-            self.grid.SetCellValue(i, 9, str(case.get('Comment', "") or ""))
-            self.grid.SetCellValue(i, 10, str(case.get('FailCount', "") or ""))
-            self.grid.SetCellValue(i, 11, str(case.get('BlockConut', "") or ""))
+            self.grid.SetCellValue(i, 1, str(case.get('executor_name', "")))
+            self.grid.SetCellValue(i, 2, str(case.get('TestResult', "")))
+            self.grid.SetCellValue(i, 3, str(case.get('TestTime', "")))
+            self.grid.SetCellValue(i, 4, case.get('CaseTitle', ""))
+            self.grid.SetCellValue(i, 5, str(case.get('PreConditions', "")))
+            self.grid.SetCellValue(i, 6, case.get('CaseSteps', ""))
+            self.grid.SetCellValue(i, 7, case.get('ExpectedResult', ""))
+            self.grid.SetCellValue(i, 8, str(case.get('StartTime', "") or ""))
+            self.grid.SetCellValue(i, 9, str(case.get('EndTime', "") or ""))
+            self.grid.SetCellValue(i, 10, str(case.get('Comment', "") or ""))
+            self.grid.SetCellValue(i, 11, str(case.get('FailCount', "") or ""))
+            self.grid.SetCellValue(i, 12, str(case.get('BlockConut', "") or ""))
 
             # 设置背景颜色
             test_result = case.get('TestResult', "")
             if test_result == 'Pass':
-                self.grid.SetCellBackgroundColour(i, 1, wx.Colour(144, 238, 144))  # 浅绿色
+                self.grid.SetCellBackgroundColour(i, 2, wx.Colour(144, 238, 144))  # 浅绿色
             elif test_result in ['Fail', 'Block']:
-                self.grid.SetCellBackgroundColour(i, 1, wx.Colour(255, 99, 71))  # 浅红色
+                self.grid.SetCellBackgroundColour(i, 2, wx.Colour(255, 99, 71))  # 浅红色
 
             # 为最后一列设置“查看图片按钮”
-            self.grid.SetCellValue(i, 12, "查看图片")
-            self.grid.SetCellRenderer(i, 12, ButtonRenderer("查看图片"))
+            self.grid.SetCellValue(i, 13, "查看图片")
+            self.grid.SetCellRenderer(i, 13, ButtonRenderer("查看图片"))
 
         # 禁止直接编辑单元格
         self.grid.EnableEditing(False)
@@ -463,7 +464,7 @@ class TestAdminPanel(wx.Panel):
         row = event.GetRow()
         col = event.GetCol()
         # 判断点击的是“查看图片”列
-        if col == 12:
+        if col == 13:
             execution_id = self.row_to_execution_id.get(row)
             if execution_id:
                 self.on_view_image_click(execution_id)
