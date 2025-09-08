@@ -160,7 +160,7 @@ def insert_case(current_user, current_userid):
 
     logger.info(f"Inserting case for plan: {plan_name}, project: {project_name}, sheet: {sheet_name}")
 
-    if not plan_name or not project_name or not project_phase or not sheet_name or not userid or not workloading or not filename or not cases or not model_name:
+    if not plan_name or not project_name or not project_phase or not sheet_name or not userid or not workloading or not filename or not cases or not model_name or not tester:
         return jsonify({'error': 'Missing required parameters'}), 400
 
     conn = get_db_connection()

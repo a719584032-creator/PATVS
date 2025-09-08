@@ -13,7 +13,7 @@ import base64
 import requests
 
 directory = "C:\\PATVS"
-VERSION = "1.0.6"
+VERSION = "1.0.7"
 if not os.path.exists(directory):
     os.makedirs(directory)
 file_dir = os.path.join(directory, 'credentials.json')
