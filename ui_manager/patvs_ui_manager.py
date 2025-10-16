@@ -687,11 +687,19 @@ class TestCasesPanel(wx.Panel):
                 wx.MessageBox('请选择至少一张图片进行上传。', '提示', wx.OK | wx.ICON_WARNING)
                 return
 
+            # 这里也快照一次用户名，提前做校验（与服务器端的兜底一起把风险降到最低）
+            username_snapshot = getattr(self, "username", None)
+            if not isinstance(username_snapshot, str):
+                username_snapshot = "" if username_snapshot is None else str(username_snapshot)
+            if not username_snapshot.strip():
+                wx.MessageBox('当前用户（executor_name）为空，请先登录或初始化用户名后再上传。', '错误',
+                              wx.OK | wx.ICON_ERROR)
+                logger.error("executor_name empty at confirm button; aborting.")
+                return
+
             try:
-                # 调用上传接口
-                self.upload_files_to_server(selected_files, case_result, comment)
-                #   wx.MessageBox('图片上传成功！', '信息', wx.OK | wx.ICON_INFORMATION)
-                dialog.EndModal(wx.ID_OK)  # 上传成功后关闭对话框
+                self.upload_files_to_server(selected_files, case_result, username_snapshot, comment)
+                dialog.EndModal(wx.ID_OK)
             except Exception as e:
                 wx.MessageBox(f"图片上传失败：{e}", '错误', wx.OK | wx.ICON_ERROR)
 
@@ -711,14 +719,23 @@ class TestCasesPanel(wx.Panel):
         # 如果用户点击确认上传返回 True，否则返回 False
         return result == wx.ID_OK
 
-    def upload_files_to_server(self, file_paths, case_result, comment=None):
+    def upload_files_to_server(self, file_paths, case_result, username_snapshot, comment=None):
+        # 1) 读取并快照用户名（避免后续被改）
+        executor_name = getattr(self, "username", None)
+
+        # 2) 严格校验
+        if executor_name is None:
+            logger.error("executor_name is empty before upload; aborting.")
+        # 你可以在这里从别处兜底一次，比如从配置/登录态/环境变量
+            executor_name = username_snapshot
+
         files = []
         for file_path in file_paths:
             # 打开文件并保持打开状态，直到上传完成
             file = open(file_path, 'rb')
             files.append(('image_files', (os.path.basename(file_path), file, 'multipart/form-data')))
 
-        data = {'case_id': self.CaseID, 'model_id': self.model_id, 'case_result': case_result, 'executor_name': self.username, 'comment': comment}
+        data = {'case_id': self.CaseID, 'model_id': self.model_id, 'case_result': case_result, 'executor_name': executor_name, 'comment': comment}
         logger.warning(files)
         try:
 

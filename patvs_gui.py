@@ -7,6 +7,7 @@ from ui_manager.patvs_admin_ui_manager import TestAdminPanel
 from common.logs import logger
 import sys
 import os
+import glob
 from requests_manager.http_requests_manager import http_manager
 import json
 import base64
@@ -253,6 +254,10 @@ class ChangePasswordDialog(wx.Dialog):
 
 class MainApp(wx.App):
     def OnInit(self):
+        try:
+            self.cleanup_old_exes_on_start(prefix="TestTrackingSystem-", ext=".exe")
+        except Exception as e:
+            logger.warning(f"startup cleanup failed: {e}")
         # 检查是否已设置为开机启动
         app_name = f"Test_Tracking_System-{VERSION}"
         if not is_in_startup(app_name):
@@ -327,9 +332,57 @@ class MainApp(wx.App):
 
         threading.Thread(target=do_download, daemon=True).start()
 
+    def _get_desktop_dir(self):
+        # 尝试优先拿“真实桌面路径”（兼容 OneDrive 桌面）
+        try:
+            import ctypes, ctypes.wintypes as wt
+            from uuid import UUID
+            SHGetKnownFolderPath = ctypes.windll.shell32.SHGetKnownFolderPath
+            SHGetKnownFolderPath.restype = ctypes.HRESULT
+            FOLDERID_Desktop = UUID('{B4BFCC3A-DB2C-424C-B029-7FE99A87C641}')
+            path_ptr = wt.LPWSTR()
+            if SHGetKnownFolderPath(ctypes.byref(ctypes.c_byte.from_buffer_copy(FOLDERID_Desktop.bytes_le)),
+                                    0, 0, ctypes.byref(path_ptr)) == 0:
+                desktop = path_ptr.value
+                ctypes.windll.Ole32.CoTaskMemFree(path_ptr)
+                if desktop:
+                    return desktop
+        except Exception:
+            pass
+        # 兜底：用户目录下的 Desktop
+        return os.path.join(os.path.expanduser("~"), "Desktop")
+
+    def cleanup_old_exes_on_start(self, prefix="TestTrackingSystem-", ext=".exe"):
+        desktop = self._get_desktop_dir()
+        pattern = os.path.join(desktop, f"{prefix}*{ext}")
+        cur_name = os.path.basename(sys.executable) if getattr(sys, 'frozen', False) else None
+        for path in glob.glob(pattern):
+            name = os.path.basename(path)
+            if cur_name and name.lower() == cur_name.lower():
+                continue  # 保留自己
+            try:
+                os.remove(path)
+                logger.info(f"Deleted old exe: {path}")
+            except Exception as e:
+                logger.error(f"Delete failed: {path} -> {e}")
+
     def download_success(self, save_path):
+        """
+        下载成功后：
+        1) 启动新 EXE（例如 TestTrackingSystem-1.0.8.exe）
+        2) 清理桌面上其它同前缀的旧版本 EXE（例如 1.0.7、1.0.6 …）
+        3) 退出当前程序
+        """
         wx.MessageBox("下载成功，即将安装新版本", "提示", wx.OK | wx.ICON_INFORMATION)
-        os.startfile(save_path)
+
+        # 启动新 EXE
+        try:
+            os.startfile(save_path)
+        except Exception as e:
+            # 启动失败也无妨，给个提示
+            wx.MessageBox(f"新版本启动失败：{e}", "错误", wx.OK | wx.ICON_ERROR)
+
+        # 退出当前应用
         wx.GetApp().ExitMainLoop()
         sys.exit(0)
 
