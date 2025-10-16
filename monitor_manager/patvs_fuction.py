@@ -4,6 +4,7 @@ import wx
 from common.logs import logger
 from monitor_manager.devicerm import Notification
 from monitor_manager.lock_screen import monitor_locks
+from monitor_manager.audio_event_constants import AUDIO_EVENT_KEYWORDS
 from ctypes import cast, POINTER
 from comtypes import CLSCTX_ALL
 from pycaw.pycaw import AudioUtilities, IAudioEndpointVolume
@@ -142,6 +143,22 @@ class Patvs_Fuction():
         self.case_id = None
         self.action_complete = threading.Event()
         self.msg_loop_thread_id = None
+        self.audio_log_files = []
+        self.audio_log_offsets = {}
+        self.audio_event_cache = {}
+
+    def update_audio_log_files(self, files):
+        """更新需要监控的音频日志文件列表。"""
+        # 使用 ``dict.fromkeys`` 去重同时保持原有顺序
+        self.audio_log_files = list(dict.fromkeys(files))
+
+    def initialize_audio_monitor_state(self, offsets=None):
+        """重置音频日志监控的偏移量和缓存计数。"""
+        self.audio_log_offsets = {}
+        if offsets:
+            for path, position in offsets.items():
+                self.audio_log_offsets[path] = position
+        self.audio_event_cache = {}
 
     def monitor_time(self, num_time):
         """
@@ -996,6 +1013,7 @@ class Patvs_Fuction():
                     wx.CallAfter(self.window.add_log_message, f"您选择的动作是: {action}，目标测试次数: {test_num}")
             for action, test_num in self.remaining_actions:
                 if self.stop_event:
+                    display_action = action
                     action = self.normalize_action(action)
                     test_num = float(test_num)
                     # 在每个动作开始前更新临时文件
@@ -1064,6 +1082,11 @@ class Patvs_Fuction():
                         wx.CallAfter(self.window.add_log_message,
                                      f"开始执行监控: {action} 开关事件，目标测试次数: {test_num}")
                         threading.Thread(target=self.monitor_video_changes, args=(test_num,)).start()
+                    elif action in AUDIO_EVENT_KEYWORDS:
+                        wx.CallAfter(self.window.add_log_message,
+                                     f"开始执行监控音频事件: {display_action}，目标测试次数: {int(test_num)}")
+                        threading.Thread(target=self.monitor_audio_event,
+                                         args=(action, test_num, display_action)).start()
                     else:
                         wx.CallAfter(self.window.add_log_message,
                                      f"未匹配到任何监控事项，请检查 {action} 填写是否正确")
@@ -1091,6 +1114,113 @@ class Patvs_Fuction():
         self.save_remaining_actions()
         self.window.Destroy()
         wx.GetApp().ExitMainLoop()
+
+    def monitor_audio_event(self, action_key, target_count, display_action=None):
+        """监控音频日志文件中的关键字出现次数。"""
+        open_files = []
+        try:
+            if action_key not in AUDIO_EVENT_KEYWORDS:
+                wx.CallAfter(self.window.add_log_message,
+                             f"未在音频事件常量中找到 {display_action or action_key} 对应的关键字。")
+                return
+
+            keyword = AUDIO_EVENT_KEYWORDS[action_key]
+            target_count = int(float(target_count)) if target_count is not None else 0
+            target_count = max(0, target_count)
+
+            if target_count == 0:
+                wx.CallAfter(self.window.add_log_message,
+                             f"音频事件 {display_action or action_key} 目标次数为 0，自动跳过。")
+                return
+
+            if not self.audio_log_files:
+                wx.CallAfter(self.window.add_log_message,
+                             f"未选择任何 Lab Audio 日志文件，无法监控 {display_action or action_key}。")
+                return
+
+            current_count = self.audio_event_cache.get(action_key, 0)
+            if current_count >= target_count:
+                wx.CallAfter(
+                    self.window.add_log_message,
+                    f"音频事件 {display_action or action_key} 已提前满足目标次数 {target_count}，当前计数 {current_count}。"
+                )
+                return
+
+            for path in self.audio_log_files:
+                try:
+                    file_obj = open(path, 'r', encoding='utf-8', errors='ignore')
+                    start_pos = self.audio_log_offsets.get(path)
+                    if start_pos is None:
+                        file_obj.seek(0, os.SEEK_END)
+                    else:
+                        file_obj.seek(start_pos)
+                    open_files.append((path, file_obj))
+                except Exception as file_error:
+                    logger.error(f"无法打开音频日志文件 {path}: {file_error}")
+                    wx.CallAfter(self.window.add_log_message,
+                                 f"无法打开音频日志文件 {path}: {file_error}")
+
+            if not open_files:
+                wx.CallAfter(self.window.add_log_message,
+                             f"无法监控 {display_action or action_key}，音频日志文件打开失败。")
+                return
+
+            wx.CallAfter(
+                self.window.add_log_message,
+                f"开始监控音频事件 {display_action or action_key}，目标 {target_count} 次，关键字: {keyword}"
+            )
+            if current_count > 0:
+                wx.CallAfter(
+                    self.window.add_log_message,
+                    f"音频事件 {display_action or action_key} 当前已有计数 {current_count}/{target_count}。"
+                )
+
+            while self.stop_event and current_count < target_count:
+                progress_made = False
+                for path, file_obj in open_files:
+                    line = file_obj.readline()
+                    while line:
+                        progress_made = True
+                        for normalized_key, event_keyword in AUDIO_EVENT_KEYWORDS.items():
+                            if event_keyword in line:
+                                cached = self.audio_event_cache.get(normalized_key, 0) + 1
+                                self.audio_event_cache[normalized_key] = cached
+                                if normalized_key == action_key:
+                                    current_count = cached
+                                    wx.CallAfter(
+                                        self.window.add_log_message,
+                                        f"[{os.path.basename(path)}] 检测到 {keyword} ({current_count}/{target_count})"
+                                    )
+                        line = file_obj.readline()
+                    self.audio_log_offsets[path] = file_obj.tell()
+                    if current_count >= target_count or not self.stop_event:
+                        break
+                if current_count >= target_count or not self.stop_event:
+                    break
+                if not progress_made:
+                    time.sleep(0.5)
+
+            if current_count >= target_count:
+                wx.CallAfter(
+                    self.window.add_log_message,
+                    f"音频事件 {display_action or action_key} 已达到目标次数 {target_count}。"
+                )
+            else:
+                wx.CallAfter(
+                    self.window.add_log_message,
+                    f"音频事件 {display_action or action_key} 监控结束，当前计数 {current_count}/{target_count}。"
+                )
+        except Exception as error:
+            logger.error(f"监控音频事件 {display_action or action_key} 出现异常: {error}")
+            wx.CallAfter(self.window.add_log_message,
+                         f"监控音频事件 {display_action or action_key} 出现异常: {error}")
+        finally:
+            for _, file_obj in open_files:
+                try:
+                    file_obj.close()
+                except Exception:
+                    pass
+            self.action_complete.set()
 
 
 if __name__ == '__main__':

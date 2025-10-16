@@ -13,6 +13,7 @@ import openpyxl
 import sys
 from functools import partial
 from monitor_manager.patvs_fuction import Patvs_Fuction
+from monitor_manager.audio_event_constants import AUDIO_EVENT_KEYWORDS
 from openpyxl.styles import PatternFill
 from openpyxl.styles import Font
 from monitor_manager.up_files import run_main
@@ -75,6 +76,7 @@ class TestCasesPanel(wx.Panel):
         # 在主线程中创建一个事件,用来通知阻塞情况下终止线程
         self.stop_event = True
         self.patvs_monitor = Patvs_Fuction(self, self.stop_event)
+        self.audio_log_files = []
         self.username = username  # 保存用户名
         self.userid = http_manager.get_params(f'/get_userid/{self.username}').get('user_id')  # 保存用户名
         self.token = token
@@ -252,11 +254,17 @@ class TestCasesPanel(wx.Panel):
             self.result_buttons[button].Hide()
 
         self.actions_and_num = wx.StaticText(self, label="监控动作和次数: N/A")
+        self.audio_log_button = wx.Button(self, label='选择Lab Audio日志')
+        self.audio_log_button.Bind(wx.EVT_BUTTON, self.on_select_audio_logs)
+        self.audio_log_label = wx.StaticText(self, label='Lab Audio日志: 未选择')
 
         # 在主布局中添加按钮布局和新的布局
         mainSizer.Add(self.splitter, 1, wx.EXPAND)
 
         actionSizer.Add(self.actions_and_num, 0, wx.ALIGN_CENTER_VERTICAL | wx.ALL, 5)
+        actionSizer.AddSpacer(10)
+        actionSizer.Add(self.audio_log_button, 0, wx.ALIGN_CENTER_VERTICAL | wx.ALL, 5)
+        actionSizer.Add(self.audio_log_label, 0, wx.ALIGN_CENTER_VERTICAL | wx.ALL, 5)
         actionSizer.AddSpacer(250)  # 添加伸缩控件
 
         # 创建底部布局，将下拉框和按钮放在右侧
@@ -558,6 +566,26 @@ class TestCasesPanel(wx.Panel):
             self.log_content.AppendText(message + '\n')  # 在文本控件的末尾添加文本
             logger.info(message + '\n')
 
+    def on_select_audio_logs(self, event):
+        with wx.FileDialog(self, "选择Lab Audio日志文件",
+                           wildcard="日志文件 (*.log)|*.log|所有文件 (*.*)|*.*",
+                           style=wx.FD_OPEN | wx.FD_FILE_MUST_EXIST | wx.FD_MULTIPLE) as file_dialog:
+            if file_dialog.ShowModal() == wx.ID_CANCEL:
+                return
+            paths = file_dialog.GetPaths()
+            self.audio_log_files = list(dict.fromkeys(paths))
+            self.patvs_monitor.update_audio_log_files(self.audio_log_files)
+            if self.audio_log_files:
+                display_names = [os.path.basename(path) for path in self.audio_log_files]
+                if len(display_names) > 3:
+                    label_text = f"Lab Audio日志: 已选择 {len(display_names)} 个文件"
+                else:
+                    label_text = "Lab Audio日志: " + ", ".join(display_names)
+            else:
+                label_text = 'Lab Audio日志: 未选择'
+            self.audio_log_label.SetLabel(label_text)
+            self.Layout()
+
     def upload_image(self, case_result, comment=None):
         """改进后的上传图片交互逻辑，支持图片预览和删除功能"""
         dialog = wx.Dialog(self, title="上传图片", size=(800, 600))
@@ -804,6 +832,26 @@ class TestCasesPanel(wx.Panel):
             if not action_and_num:
                 wx.MessageBox('未检测到任何匹配项，请按照规则修改用例标题后再测试', 'Warning')
                 return
+            normalized_actions = [self.patvs_monitor.normalize_action(action) for action, _ in action_and_num]
+            requires_audio = any(action in AUDIO_EVENT_KEYWORDS for action in normalized_actions)
+            if requires_audio:
+                if not self.audio_log_files:
+                    wx.MessageBox('检测到需要监控的音频事件，请先选择Lab Audio日志文件。', 'Warning')
+                    return
+                offsets = {}
+                missing_files = []
+                for path in self.audio_log_files:
+                    try:
+                        offsets[path] = os.path.getsize(path)
+                    except OSError as exc:
+                        missing_files.append(f"{path}: {exc}")
+                if missing_files:
+                    wx.MessageBox('以下日志文件无法访问，请检查后重试:\n' + '\n'.join(missing_files), 'Error')
+                    return
+                self.patvs_monitor.update_audio_log_files(self.audio_log_files)
+                self.patvs_monitor.initialize_audio_monitor_state(offsets)
+            else:
+                self.patvs_monitor.initialize_audio_monitor_state({})
             params = {"case_id": self.CaseID, "model_id": self.model_id}
             result = http_manager.get_params(f'/get_case_result', params=params)
             if result.get('case_result'):
