@@ -108,6 +108,17 @@ EVENT_SPECS: Dict[str, EventSpec] = {
     "EXIT_SLEEP_MIC": {'keywords': ["LENOVO_EXIT_SLEEP_MIC"], 'description': "麦秆拨动退出休眠"},
 }
 
+
+def _normalize_for_mapping(action: str) -> str:
+    return action.lower().replace(" ", "") if isinstance(action, str) else action
+
+
+AUDIO_EVENT_KEYWORDS: Dict[str, str] = {
+    _normalize_for_mapping(key): spec['keywords'][0]
+    for key, spec in EVENT_SPECS.items()
+    if spec.get('keywords')
+}
+
 def normalize_action(s: str) -> str:
     return s.strip() if isinstance(s, str) else s
 
@@ -123,4 +134,13 @@ def get_keywords(action: str) -> List[str]:
     spec = get_event_spec(action)
     return spec['keywords'] if spec else []
 
-__all__ = ['DEFAULT_LOG_DIR','DEFAULT_FILE_PATTERNS','EventSpec','EVENT_SPECS','is_event_code','get_event_spec','get_keywords']
+__all__ = [
+    'DEFAULT_LOG_DIR',
+    'DEFAULT_FILE_PATTERNS',
+    'EventSpec',
+    'EVENT_SPECS',
+    'AUDIO_EVENT_KEYWORDS',
+    'is_event_code',
+    'get_event_spec',
+    'get_keywords',
+]
