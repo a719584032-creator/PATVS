@@ -18,3 +18,10 @@ Werkzeug
 loguru==0.5.3
 Flask-Security==5.5.2
 boto3
+PyQt5
+psutil
+pynput
+pycaw
+screen-brightness-control
+opencv-python
+pyinstaller
